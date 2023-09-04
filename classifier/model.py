@@ -1,19 +1,18 @@
-from torchvision.models import densenet121
+from torchvision.models import densenet121, densenet
 from torch import nn
-from nn import init
+from torch.nn import init
+from torch import load as tload
 
-def build_model(path: str = None):
+def build_model(path: str = None) -> densenet.DenseNet:
     """
     Returns the model and loads the weights from path if path is not None.
     If path is None, builds the model from scratch (with randomly initialized weights)
     """
     
+
     if path is not None:
         model = densenet121(num_classes=16)
-        model.load_state_dict(torch.load(path))
-    
-    elif path == "pretrained":
-        model = densenet121(pretrained=True, num_classes=16)
+        model.load_state_dict(tload(path))
 
     else: # initialize weights with xavier init
         model = densenet121(num_classes=16)
@@ -32,4 +31,4 @@ def build_model(path: str = None):
 
 if __name__ == '__main__':
     model = build_model()
-    print(model)
+    print(type(model))
