@@ -6,10 +6,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+
     image: medical_image_stable_diffusion
     restart: unless-stopped
+
     volumes:
       - .:/App
+      - ./data:/App/data
+      - ./checkpoints:/App/checkpoints
+
     entrypoint: tail -f /dev/null
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
