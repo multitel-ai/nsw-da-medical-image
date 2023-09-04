@@ -6,3 +6,7 @@ scipy==1.11.2
 pillow==9.4
 scikit-learn==1.2
 matplotlib
+diffusers
+accelerate
+scipy
+safetensors
