@@ -36,6 +36,45 @@ class VideoMetadata(typing.NamedTuple):
     cum_num_frames: int  # amount of frames of all previous videos in the list
 
 
+def _get_video_frames(
+    plane_path: pathlib.Path,
+    videos: list[Video],
+) -> list[VideoMetadata]:
+    videos_metadata: list[VideoMetadata] = []
+    _running_count = 0
+
+    for _video in videos:
+        _video_dir = plane_path / _video.directory
+        frame_lst: list[int] = []
+        for frame_file in list(_video_dir.iterdir()):
+            if frame_file.name == "F0":
+                continue
+            assert frame_file.is_file()
+            idx = frame_file.stem.find("RUN", -8) + len("RUN")
+            frame_number = int(frame_file.stem[idx:])
+            frame_lst.append(frame_number)
+
+        phase_path = plane_path.parent / (PREFIX + "_annotations") / f"{_video.directory}_phases.csv"
+        df = pd.read_csv(phase_path, index_col=None, header=None)
+
+        first_start = df[df.columns[1]].min()
+        last_end = df[df.columns[1]].max()
+
+        frame_lst = [f for f in frame_lst if f >= first_start and f <= last_end]
+
+        prefix = frame_file.stem[:idx]  # type:ignore
+        metadata = VideoMetadata(
+            video=_video.idx(),
+            frames=sorted(frame_lst),
+            prefix=prefix,
+            cum_num_frames=_running_count,
+        )
+        videos_metadata.append(metadata)
+        _running_count += len(frame_lst)
+
+    return videos_metadata
+
+
 class NSWDataset(Dataset[DataItem]):
     "return: torch.Tensor for the image"
 
@@ -58,28 +97,10 @@ class NSWDataset(Dataset[DataItem]):
         self.base_path = base_path
         self.transform = transform or transforms.ToTensor()
 
-        self.videos_metadata: list[VideoMetadata] = []
-        _plane = self.planes[0]
-        _running_count = 0
-        for _video in self.videos:
-            _video_dir = self.base_path / (PREFIX + _plane.suffix) / _video.directory
-            frame_lst = []
-            for frame_file in list(_video_dir.iterdir()):
-                if frame_file.name == "F0":
-                    continue
-                assert frame_file.is_file()
-                idx = frame_file.stem.find("RUN", -8) + len("RUN")
-                frame_number = int(frame_file.stem[idx:])
-                frame_lst.append(frame_number)
-            prefix = frame_file.stem[:idx]  # type:ignore
-            metadata = VideoMetadata(
-                video=_video.idx(),
-                frames=sorted(frame_lst),
-                prefix=prefix,
-                cum_num_frames=_running_count,
-            )
-            self.videos_metadata.append(metadata)
-            _running_count += len(frame_lst)
+        self.videos_metadata = _get_video_frames(
+            self.base_path / (PREFIX + self.planes[0].suffix),
+            self.videos,
+        )
 
     def frames_per_plane(self) -> int:
         last_metadata = self.videos_metadata[-1]
