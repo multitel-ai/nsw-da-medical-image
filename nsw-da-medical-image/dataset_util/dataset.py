@@ -27,8 +27,6 @@ class DataItem(typing.NamedTuple):
     phase: int  # index in enums.Phase
     plane: int  # index in enums.FocalPlane
     video: int  # index in enums.Video
-    time: float
-    phase_prog: float
 
 
 class VideoMetadata(typing.NamedTuple):
@@ -126,7 +124,7 @@ class NSWDataset(Dataset[DataItem]):
     def find_image(self, vid_dir: pathlib.Path, prefix: str, frame: int):
         return vid_dir / (prefix + str(frame) + ".jpeg")
 
-    def get_phase(self, video: Video, frame: int) -> tuple[int, float]:
+    def get_phase(self, video: Video, frame: int) -> int:
         path = (
             self.base_path / (PREFIX + "_annotations") / f"{video.directory}_phases.csv"
         )
@@ -134,36 +132,13 @@ class NSWDataset(Dataset[DataItem]):
         for _, phase, ps, pe in df.itertuples():
             if frame < ps or frame > pe:
                 continue
-            prog = 1.0
-            if pe != ps:
-                prog = (frame - ps) / (pe - ps)
-            return Phase(phase).idx(), prog
+            return Phase(phase).idx()
         else:
             min_start = df[df.columns[1]].min()
             if frame < min_start:
-                return Phase.beginning.idx(), frame / min_start
+                return Phase.beginning.idx()
             else:
-                return Phase.trailing.idx(), 1.0
-
-    def get_time(self, video: Video, frame: int) -> float:
-        path = (
-            self.base_path
-            / (PREFIX + "_time_elapsed")
-            / f"{video.directory}_timeElapsed.csv"
-        )
-        df = pd.read_csv(path, index_col=None, header=0)
-        try:
-            selection = df[df["frame_index"] == frame].time
-        except KeyError:
-            raise RuntimeError(f"column 'frame_index' absent in {path}")
-
-        match len(selection):
-            case 1:
-                return float(selection.item())
-            case 0:
-                return float("nan")  # TODO we can do better
-            case _:
-                raise RuntimeError(f"multiple time values for {frame=} ({path})")
+                return Phase.trailing.idx()
 
     def __getitem__(self, index) -> DataItem:
         plane, video, frame, prefix = self.un_flatten_idx(index)
@@ -171,7 +146,7 @@ class NSWDataset(Dataset[DataItem]):
         image_path = self.find_image(self.get_directory(plane, video), prefix, frame)
         image = Image.open(image_path)
 
-        phase, phase_prog = self.get_phase(video, frame)
+        phase = self.get_phase(video, frame)
 
         data = self.transform(image)
 
@@ -180,8 +155,6 @@ class NSWDataset(Dataset[DataItem]):
             phase=phase,
             plane=plane.idx(),
             video=video.idx(),
-            time=self.get_time(video, frame),
-            phase_prog=phase_prog,
         )
 
 
