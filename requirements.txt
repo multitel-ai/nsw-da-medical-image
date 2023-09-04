@@ -2,3 +2,5 @@ ipykernel==6.23.2
 transformers==4.32.1
 wandb==0.15.9
 pandas==1.5
+pillow==9.4
+scikit-learn==1.2
