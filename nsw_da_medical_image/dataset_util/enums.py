@@ -14,9 +14,6 @@ All enums should be decorated with 'enum_by_index' so they have the methods
 """
 
 import random
-import numpy as np
-
-from sklearn.model_selection import KFold
 
 from .util import EnumIdx
 
@@ -52,8 +49,6 @@ class Phase(EnumIdx):
     tB = "tB"
     tEB = "tEB"
     tHB = "tHB"
-    beginning = "beginning"  # frames are before the first phase
-    trailing = "trailing"  # some frames are past the last phase
 
     @property
     def label(self) -> str:

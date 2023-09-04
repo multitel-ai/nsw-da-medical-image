@@ -154,12 +154,7 @@ class NSWDataset(Dataset[DataItem]):
             if frame < ps or frame > pe:
                 continue
             return Phase(phase).idx()
-        else:
-            min_start = df[df.columns[1]].min()
-            if frame < min_start:
-                return Phase.beginning.idx()
-            else:
-                return Phase.trailing.idx()
+        raise RuntimeError("frames without phases should have been discarded")
 
     def __getitem__(self, index) -> DataItem:
         plane, video, frame, prefix = self.un_flatten_idx(index)
