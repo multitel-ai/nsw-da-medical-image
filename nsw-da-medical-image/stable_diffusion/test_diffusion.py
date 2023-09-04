@@ -1,7 +1,14 @@
 import torch
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+import os 
+
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, UNet2DConditionModel
+
+__location__ = os.path.realpath(
+    os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 model_id = "stabilityai/stable-diffusion-2-1"
+
+unet = UNet2DConditionModel
 
 # Use the DPMSolverMultistepScheduler (DPM-Solver++) scheduler here insteasd
 pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
@@ -11,4 +18,5 @@ pipe = pipe.to("cuda")
 prompt = "Medical image with optical micropscope of a human embryo at development stage t2"
 for i in range(3):
     image = pipe(prompt).images[0]
-    image.save(f"/home/ucl/ingi/echatzop/Nantes/nsw-da-medical-image/nsw-da-medical-image/stable_diffusion/embryo{i}.png")
+    image.save(os.path.join(__location__,f"embryo{i}.png"))
+
