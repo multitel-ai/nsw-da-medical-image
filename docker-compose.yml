@@ -1,0 +1,16 @@
+version: '2.4'
+
+services:
+  medical_image_stable_diffusion_network:
+    container_name: medical_image_stable_diffusion
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: medical_image_stable_diffusion
+    restart: unless-stopped
+    volumes:
+      - .:/App
+    entrypoint: tail -f /dev/null
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    runtime: nvidia
