@@ -27,8 +27,6 @@ class DataItem(typing.NamedTuple):
     phase: int  # index in enums.Phase
     plane: int  # index in enums.FocalPlane
     video: int  # index in enums.Video
-    time: float
-    phase_prog: float
 
 
 class VideoMetadata(typing.NamedTuple):
@@ -36,6 +34,45 @@ class VideoMetadata(typing.NamedTuple):
     frames: list[int]  # values in the filenames
     prefix: str  # filename prefix to find the path of the image
     cum_num_frames: int  # amount of frames of all previous videos in the list
+
+
+def _get_video_frames(
+    plane_path: pathlib.Path,
+    videos: list[Video],
+) -> list[VideoMetadata]:
+    videos_metadata: list[VideoMetadata] = []
+    _running_count = 0
+
+    for _video in videos:
+        _video_dir = plane_path / _video.directory
+        frame_lst: list[int] = []
+        for frame_file in list(_video_dir.iterdir()):
+            if frame_file.name == "F0":
+                continue
+            assert frame_file.is_file()
+            idx = frame_file.stem.find("RUN", -8) + len("RUN")
+            frame_number = int(frame_file.stem[idx:])
+            frame_lst.append(frame_number)
+
+        phase_path = plane_path.parent / (PREFIX + "_annotations") / f"{_video.directory}_phases.csv"
+        df = pd.read_csv(phase_path, index_col=None, header=None)
+
+        first_start = df[df.columns[1]].min()
+        last_end = df[df.columns[1]].max()
+
+        frame_lst = [f for f in frame_lst if f >= first_start and f <= last_end]
+
+        prefix = frame_file.stem[:idx]  # type:ignore
+        metadata = VideoMetadata(
+            video=_video.idx(),
+            frames=sorted(frame_lst),
+            prefix=prefix,
+            cum_num_frames=_running_count,
+        )
+        videos_metadata.append(metadata)
+        _running_count += len(frame_lst)
+
+    return videos_metadata
 
 
 class NSWDataset(Dataset[DataItem]):
@@ -60,28 +97,10 @@ class NSWDataset(Dataset[DataItem]):
         self.base_path = base_path
         self.transform = transform or transforms.ToTensor()
 
-        self.videos_metadata: list[VideoMetadata] = []
-        _plane = self.planes[0]
-        _running_count = 0
-        for _video in self.videos:
-            _video_dir = self.base_path / (PREFIX + _plane.suffix) / _video.directory
-            frame_lst = []
-            for frame_file in list(_video_dir.iterdir()):
-                if frame_file.name == "F0":
-                    continue
-                assert frame_file.is_file()
-                idx = frame_file.stem.find("RUN", -8) + len("RUN")
-                frame_number = int(frame_file.stem[idx:])
-                frame_lst.append(frame_number)
-            prefix = frame_file.stem[:idx]  # type:ignore
-            metadata = VideoMetadata(
-                video=_video.idx(),
-                frames=sorted(frame_lst),
-                prefix=prefix,
-                cum_num_frames=_running_count,
-            )
-            self.videos_metadata.append(metadata)
-            _running_count += len(frame_lst)
+        self.videos_metadata = _get_video_frames(
+            self.base_path / (PREFIX + self.planes[0].suffix),
+            self.videos,
+        )
 
     def frames_per_plane(self) -> int:
         last_metadata = self.videos_metadata[-1]
@@ -126,7 +145,7 @@ class NSWDataset(Dataset[DataItem]):
     def find_image(self, vid_dir: pathlib.Path, prefix: str, frame: int):
         return vid_dir / (prefix + str(frame) + ".jpeg")
 
-    def get_phase(self, video: Video, frame: int) -> tuple[int, float]:
+    def get_phase(self, video: Video, frame: int) -> int:
         path = (
             self.base_path / (PREFIX + "_annotations") / f"{video.directory}_phases.csv"
         )
@@ -134,36 +153,13 @@ class NSWDataset(Dataset[DataItem]):
         for _, phase, ps, pe in df.itertuples():
             if frame < ps or frame > pe:
                 continue
-            prog = 1.0
-            if pe != ps:
-                prog = (frame - ps) / (pe - ps)
-            return Phase(phase).idx(), prog
+            return Phase(phase).idx()
         else:
             min_start = df[df.columns[1]].min()
             if frame < min_start:
-                return Phase.beginning.idx(), frame / min_start
+                return Phase.beginning.idx()
             else:
-                return Phase.trailing.idx(), 1.0
-
-    def get_time(self, video: Video, frame: int) -> float:
-        path = (
-            self.base_path
-            / (PREFIX + "_time_elapsed")
-            / f"{video.directory}_timeElapsed.csv"
-        )
-        df = pd.read_csv(path, index_col=None, header=0)
-        try:
-            selection = df[df["frame_index"] == frame].time
-        except KeyError:
-            raise RuntimeError(f"column 'frame_index' absent in {path}")
-
-        match len(selection):
-            case 1:
-                return float(selection.item())
-            case 0:
-                return float("nan")  # TODO we can do better
-            case _:
-                raise RuntimeError(f"multiple time values for {frame=} ({path})")
+                return Phase.trailing.idx()
 
     def __getitem__(self, index) -> DataItem:
         plane, video, frame, prefix = self.un_flatten_idx(index)
@@ -171,7 +167,7 @@ class NSWDataset(Dataset[DataItem]):
         image_path = self.find_image(self.get_directory(plane, video), prefix, frame)
         image = Image.open(image_path)
 
-        phase, phase_prog = self.get_phase(video, frame)
+        phase = self.get_phase(video, frame)
 
         data = self.transform(image)
 
@@ -180,8 +176,6 @@ class NSWDataset(Dataset[DataItem]):
             phase=phase,
             plane=plane.idx(),
             video=video.idx(),
-            time=self.get_time(video, frame),
-            phase_prog=phase_prog,
         )
 
 
