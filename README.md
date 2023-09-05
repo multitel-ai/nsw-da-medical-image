@@ -35,6 +35,43 @@ Which is why it is easier to have all our experiments, and other "runnable" stuf
 
 ## Dataset util(s)
 
+### Directory structure
+
+The current idea for the structure is to have something like this :
+
+```sh
+data
+├── all-synthetic-runs
+│   ├── run1
+│   └── run2
+├── archives
+│   ├── embryo_dataset_annotations.tar.gz
+│   ├── embryo_dataset_F-15.tar.gz
+│   ├── embryo_dataset_F15.tar.gz
+│   ├── embryo_dataset_F-30.tar.gz
+│   ├── embryo_dataset_F30.tar.gz
+│   ├── embryo_dataset_F-45.tar.gz
+│   ├── embryo_dataset_F45.tar.gz
+│   ├── embryo_dataset_grades.csv
+│   ├── embryo_dataset.tar.gz
+│   └── embryo_dataset_time_elapsed.tar.gz
+└── extracted
+    ├── embryo_dataset
+    ├── embryo_dataset_annotations
+    ├── embryo_dataset_F-15
+    ├── embryo_dataset_F15
+    ├── embryo_dataset_F-30
+    ├── embryo_dataset_F30
+    ├── embryo_dataset_F-45
+    ├── embryo_dataset_F45
+    ├── embryo_dataset_grades.csv
+    └── embryo_dataset_time_elapsed
+```
+
+Initially, `data/extracted` should either : (a) be empty, or (b) not exist at all. On the other hand, `data/archives` should have the exact content that is listed above. If one archive is missing, or any other file or directory is found in this directory, an error will be returned before anything is extracted. Likewise, if `data/extracted` exists and is not empty, no archive will be extracted and an error message will be returned.
+
+The directory `all-synthetic-runs` is where synthetic dataset will be t
+
 ### `extract_dataset.py`
 
 How should you extract all the dataset ?
