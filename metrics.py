@@ -9,6 +9,15 @@ import os
 import argparse
 import scipy.linalg as linalg
 from PIL import Image
+import glob 
+
+ALLOWED_EXT = ["jpg","jpeg"]
+
+def get_imgs(root):
+    found_images = []
+    for ext in ALLOWED_EXT:
+        found_images += glob.glob(os.path.join(root,"*."+ext))
+    return found_images
 
 class SynthImageFolder():
 
@@ -16,13 +25,25 @@ class SynthImageFolder():
 
         self.root = root
         self.transform = transform
-        self.img_list = os.listdir(root)
+        
+        found_images = get_imgs(root)
+
+        if len(found_images) == 0:
+            print("Multiple folders mode")
+            folds = glob.glob(os.path.join(root,"*/"))
+            for fold in folds:
+                found_images += get_imgs(fold)
+        else:
+            print("Single folder mode")
+
+        self.img_list = found_images
+        print("Using a total of ",len(self.img_list),"images")
 
     def __len__(self):
         return len(self.img_list)
 
     def __getitem__(self,idx):
-        img = Image.open(self.root+"/"+self.img_list[idx])
+        img = Image.open(self.img_list[idx])
         if self.transform is not None:
             img = self.transform(img)
         if img.shape[0] == 1:
@@ -134,8 +155,6 @@ def main():
         dataset_name = data_dir.split("/")[-1]
         mu_path = args.result_fold_path+f"/mu_{dataset_name}.npy"
         sigma_path = args.result_fold_path+f"/std_{dataset_name}.npy"
-
-        print(mu_path,data_dir,dataset_name)
 
         if not os.path.exists(mu_path):
             # Load image folder
