@@ -3,3 +3,5 @@ diffusers
 accelerate
 scipy
 safetensors
+gradio==3.16.2
+xformers==0.0.21
