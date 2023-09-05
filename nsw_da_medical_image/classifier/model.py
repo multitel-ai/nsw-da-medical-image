@@ -2,6 +2,7 @@ from torchvision.models import densenet121, densenet
 from torch import nn
 from torch.nn import init
 from torch import load as tload
+import os
 
 def build_model(path: str = None) -> densenet.DenseNet:
     """
@@ -9,8 +10,13 @@ def build_model(path: str = None) -> densenet.DenseNet:
     If path is None, builds the model from scratch (with randomly initialized weights)
     """
     
-
-    if path is not None:
+    if path == "pretrained":
+        os.environ['TORCH_HOME'] = '/App/models'
+        model = densenet121(weights="DenseNet121_Weights.IMAGENET1K_V1")
+        num_ftrs = model.classifier.in_features
+        model.classifier = nn.Linear(num_ftrs, 16)
+        
+    elif path is not None:
         model = densenet121(num_classes=16)
         model.load_state_dict(tload(path))
 
@@ -30,5 +36,5 @@ def build_model(path: str = None) -> densenet.DenseNet:
 
 
 if __name__ == '__main__':
-    model = build_model()
+    model = build_model(path = "pretrained")
     print(type(model))
