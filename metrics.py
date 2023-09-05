@@ -117,7 +117,7 @@ def main():
     parser.add_argument("--val_batch_size",type=int,default=50)
     parser.add_argument("--num_workers",type=int,default=4)
     parser.add_argument("--result_fold_path",type=str,default="../results")
-
+    parser.add_argument("--num_classes",type=int,default=15)
     args = parser.parse_args()
 
     if not os.path.exists(args.result_fold_path):
@@ -127,13 +127,14 @@ def main():
     torch.set_grad_enabled(False)
 
     # Load model
-    model = models.densenet121(weights="IMAGENET1K_V1")
     if args.model_path is None:
+        model = models.densenet121(weights="IMAGENET1K_V1")
         if args.debug:
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
     else:
+        model = models.densenet121(num_classes=args.num_classes)
         model.load_state_dict(torch.load(args.model_path))
     model.eval()
     if cuda:
