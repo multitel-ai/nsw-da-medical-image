@@ -17,6 +17,7 @@ with the metadata.json as
 {
     "phase": "tPna",
     "focal-plane": "_F-15",
+    "prompt": "A realistic image of an embryo with ..."
     "generate-datetime": "2023-09-04T15:30:01.459358"
 }
 """
@@ -87,4 +88,5 @@ class NSWSyntheticDataset(Dataset[DataItem]):
             phase=phase.idx(),
             plane=plane.idx(),
             video=-1,  # NOTE this is required for compatibility
+            frame_number=-1  # NOTE this is required for compatibility
         )

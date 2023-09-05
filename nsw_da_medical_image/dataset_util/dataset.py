@@ -27,6 +27,7 @@ class DataItem(typing.NamedTuple):
     phase: int  # index in enums.Phase
     plane: int  # index in enums.FocalPlane
     video: int  # index in enums.Video
+    frame_number: int  # RUN(\d{1,3})
 
 
 class VideoMetadata(typing.NamedTuple):
@@ -171,7 +172,34 @@ class NSWDataset(Dataset[DataItem]):
             phase=phase,
             plane=plane.idx(),
             video=video.idx(),
+            frame_number=frame,
         )
+
+
+def __label(plane: int, video: int, frame: int):
+    return f"{plane}_{video}_{frame}"
+
+
+def label_single(data: DataItem):
+    return __label(data.plane, data.video, data.frame_number)
+
+
+def label_batch(planes: torch.Tensor, videos: torch.Tensor, frames: torch.Tensor):
+    if planes.shape != videos.shape:
+        raise ValueError(f"shape mismatch: {planes.shape=} != {videos.shape=}")
+    if videos.shape != frames.shape:
+        raise ValueError(f"shape mismatch: {videos.shape=} != {frames.shape=}")
+
+    try:
+        batch_size, = planes.shape
+    except ValueError as e:
+        raise ValueError("expected single dimension tensors") from e
+
+    labels: list[str] = []
+    for idx in range(batch_size):
+        labels.append(__label(int(planes[idx]), int(videos[idx]), int(frames[idx])))
+
+    return labels
 
 
 def __main():
