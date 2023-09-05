@@ -13,6 +13,12 @@ import glob
 
 ALLOWED_EXT = ["jpg","jpeg"]
 
+def get_dataset_name(dataset_path):
+    if dataset_path.endswith("/"):
+        dataset_path = dataset_path[:-1]
+    dataset_name = dataset_path.split("/")[-1]
+    return dataset_name
+
 def get_imgs(root):
     found_images = []
     for ext in ALLOWED_EXT:
@@ -109,8 +115,8 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir_1", type=str)
-    parser.add_argument("--data_dir_2", type=str)    
+    parser.add_argument("--data_dir_path_1", type=str)
+    parser.add_argument("--data_dir_path_2", type=str)    
     parser.add_argument("--model_path", type=str)
     parser.add_argument("--debug",action="store_true")
     parser.add_argument("--img_size",type=int)
@@ -148,18 +154,19 @@ def main():
     model.classifier.register_forward_hook(save_output)
 
     stat_dic = {}
-    for i,data_dir in enumerate([args.data_dir_1,args.data_dir_2]):
 
-        if data_dir.endswith("/"):
-            data_dir = data_dir[:-1]
+    for i,data_dir_path in enumerate([args.data_dir_path_1,args.data_dir_path_2]):
 
-        dataset_name = data_dir.split("/")[-1]
+        dataset_name = get_dataset_name(data_dir_path)
         mu_path = args.result_fold_path+f"/mu_{dataset_name}.npy"
         sigma_path = args.result_fold_path+f"/std_{dataset_name}.npy"
+        entropy_path = args.result_fold_path+f"/entropy_{dataset_name}.npy"
 
-        if not os.path.exists(mu_path):
+        pred_list = []
+
+        if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
             # Load image folder
-            dataset = SynthImageFolder(data_dir,transform=transforms.Compose([
+            dataset = SynthImageFolder(data_dir_path,transform=transforms.Compose([
                                                                 transforms.Resize(args.img_size),
                                                                 transforms.CenterCrop(args.img_size),
                                                                 transforms.ToTensor()]))
@@ -169,9 +176,9 @@ def main():
             for img in dataloader:
                 if cuda:
                     img = img.cuda()
-                model(img)
+                pred_list.append(model(img).cpu())
 
-            vectors = torch.cat(vector_list).detach().numpy()
+            vectors = torch.cat(vector_list).numpy()
             vector_list = []
 
             mu = np.mean(vectors, axis=0)
@@ -180,24 +187,36 @@ def main():
             #Saves mu and std in npy files 
             np.save(mu_path,mu)
             np.save(sigma_path,std)
+
+            preds = torch.cat(pred_list,dim=0)
+            preds = torch.softmax(preds,dim=-1)
+            preds = torch.clamp(preds,np.finfo(float).eps,1)
+            entropy = (-preds*torch.log(preds)).sum(dim=1).mean(dim=0).numpy()
+            np.save(entropy_path,entropy)
+
         else:
             mu = np.load(mu_path)
             std = np.load(sigma_path)
+            entropy = np.load(entropy_path)
 
-        stat_dic[i] = {"mu":mu,"std":std,"dataset_name":dataset_name}
+        stat_dic[dataset_name] = {"mu":mu,"std":std,"entropy":entropy}
 
-    fid = calculate_frechet_distance(stat_dic[0]["mu"],stat_dic[0]["std"],stat_dic[1]["mu"],stat_dic[1]["std"])
+    dataset1 = get_dataset_name(args.data_dir_path_1)
+    dataset2 = get_dataset_name(args.data_dir_path_2)
+
+    fid = calculate_frechet_distance(stat_dic[dataset1]["mu"],stat_dic[dataset1]["std"],stat_dic[dataset2]["mu"],stat_dic[dataset2]["std"])
+    entropy1 = stat_dic[dataset1]["entropy"]
+    entropy2 = stat_dic[dataset2]["entropy"]
 
     csv_path = args.result_fold_path+"/fid.csv"
 
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
         with open(csv_path,"w") as f:
-            f.write("model_path,data_dir_1,data_dir_2,fid\n")
+            f.write("model_path,data_dir_path_1,data_dir_path_2,fid,entropy1,entropy2\n")
 
     with open(csv_path,"a") as f:
-        f.write(f"{args.model_path},{stat_dic[0]['dataset_name']},{stat_dic[1]['dataset_name']},{fid}\n")
-
+        f.write(f"{args.model_path},{dataset1},{dataset2},{fid},{entropy1},{entropy2}\n")
 
 if __name__ == "__main__":
     main()
