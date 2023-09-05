@@ -30,8 +30,8 @@ parser.add_argument('--data_dir', type=int,
                     help='Data path')
 parser.add_argument('--json_file', type=int, default="data_split.json",
                     help='Json file with train/val split')
-parser.add_argument('--weights_path', type=int, default="None",
-                    help='Path to pretrained weights')
+parser.add_argument('--pretrained_weights', type=int, default="pretrained",
+                    help='Set pretrained weights')
 
 args = parser.parse_args()
 args_pool = {
