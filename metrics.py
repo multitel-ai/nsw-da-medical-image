@@ -172,6 +172,7 @@ def main():
                 model(img)
 
             vectors = torch.cat(vector_list).detach().numpy()
+            vector_list = []
 
             mu = np.mean(vectors, axis=0)
             std = np.cov(vectors, rowvar=False)
