@@ -2,3 +2,4 @@ ipykernel==6.23.2
 transformers==4.32.1
 wandb==0.15.9
 pandas==1.5
+scipy==1.11.2
