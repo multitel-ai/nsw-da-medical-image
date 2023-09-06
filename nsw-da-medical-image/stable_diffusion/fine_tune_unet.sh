@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Set environment variables
-model_version='v1.1'
-export MODEL_NAME="CompVis/stable-diffusion-v1-4"
+model_version='v1_1'
+export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
 export INSTANCE_DIR="./dataset/AA83-7"
 export CLASS_DIR="path_to_class_images"
 export OUTPUT_DIR="./models/$model_version"
@@ -20,7 +20,7 @@ accelerate launch train_dreambooth.py \
   --instance_prompt="Medical image with optical microscope of a human embryo at a certain development stage" \
   --class_prompt="Microscopic image of a human embryo" \
   --resolution=512 \
-  --train_batch_size=2 \
+  --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
   --learning_rate=5e-6 \
   --lr_scheduler="constant" \
@@ -33,3 +33,5 @@ accelerate launch train_dreambooth.py \
 echo "Training script completed."
 
 cp ./wandb/latest-run/files/config.yaml "$OUTPUT_DIR"
+
+python test_diffusion.py --m OUTPUT_DIR --n "3" --v model_version
