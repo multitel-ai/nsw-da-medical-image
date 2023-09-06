@@ -9,7 +9,7 @@ import pathlib
 import dataset_util as du
 from torch.utils.data import DataLoader
 import json
-from torchvision.transforms import Resize, ToTensor, Compose, Fliplr_image, Flipud_image, Rot90_image, Rot180_image
+from torchvision.transforms import Resize, ToTensor, Compose, RandomHorizontalFlip, RandomVerticalFlip,RandomRotation
 from torchvision import transforms
 import pandas as pd
 import os
@@ -20,6 +20,8 @@ def video_from_dir(dir: str) -> du.Video:
         if vid.directory == dir:
             return vid
     raise ValueError("")
+    
+
     
 def make_weights_for_balanced_classes(dir):
     class_dict = {}
@@ -54,15 +56,17 @@ def make_weights_for_balanced_classes(dir):
 def get_dataloader(data_dir:str,
                    mode:str,
                    batch_size:int,
-                   json_file:str = None):
+                   json_file:str):
     base_path = pathlib.Path(data_dir)
-    if json_file is not None:
-        kfold = json.load(open(json_file))
-        files = list(kfold[mode].keys())
+
+    kfold = json.load(open(json_file))
+    files = list(kfold[mode].keys())
+
     
     if mode=="train":
-        data_aug = transforms.Compose([Resize((256, 256)), Fliplr_image(),
-                                         Flipud_image(),Rot180_image(),Rot90_image(), ToTensor()])
+        data_aug = transforms.Compose([Resize((256, 256)), RandomHorizontalFlip(),
+                                         RandomVerticalFlip(),RandomRotation(90), 
+                                         RandomRotation(180), ToTensor()])
         
         weights=list(kfold[mode].values())
         sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
@@ -78,3 +82,5 @@ def get_dataloader(data_dir:str,
     
     dataloader = DataLoader(data_set, batch_size, sampler = sampler)
     return dataloader
+
+
