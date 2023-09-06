@@ -26,7 +26,7 @@ def video_from_dir(dir: str) -> du.Video:
 def make_weights_for_balanced_classes(dir):
     class_dict = {}
     video_classes = {}
-    videos = os.listdir(f"{dir}embryo_dataset_images/")
+    videos = os.listdir(f"{dir}embryo_dataset/")
     for video in videos:
         info_video = pd.read_csv(f"{dir}embryo_dataset_annotations/{video}_phases.csv",header=None)
         classes = info_video[0].tolist()
@@ -63,7 +63,7 @@ def get_dataloader(data_dir:str,
     files = list(kfold[mode].keys())
 
     
-    if mode=="train":
+    if mode=="train_set":
         data_aug = transforms.Compose([Resize((256, 256)), RandomHorizontalFlip(),
                                          RandomVerticalFlip(),RandomRotation(90), 
                                          RandomRotation(180), ToTensor()])
@@ -77,6 +77,7 @@ def get_dataloader(data_dir:str,
     data_set = du.NSWDataset(
         base_path,
         videos=[video_from_dir(file) for file in files],
+        planes=[du.FocalPlane.F_0],
         transform=Compose(data_aug))
     
     
