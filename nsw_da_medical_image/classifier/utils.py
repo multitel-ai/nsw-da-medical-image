@@ -78,7 +78,7 @@ def get_dataloader(data_dir:str,
         base_path,
         videos=[video_from_dir(file) for file in files],
         planes=[du.FocalPlane.F_0],
-        transform=Compose(data_aug))
+        transform=data_aug)
     
     
     dataloader = DataLoader(data_set, batch_size, sampler = sampler)
