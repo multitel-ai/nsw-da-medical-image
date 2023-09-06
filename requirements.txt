@@ -4,3 +4,4 @@ wandb==0.15.9
 pandas==1.5
 pillow==9.4
 scikit-learn==1.2
+matplotlib
