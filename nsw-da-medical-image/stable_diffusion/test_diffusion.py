@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("--m", help="Model path", default = os.path.join(__location__,'models/v1.1'))
     parser.add_argument("--n", help="Num iterrations", default = 3)
     parser.add_argument("--v", help="Model version", default = "v1_1")
-    parser.add_argument("--p", help="Custom Prompt", default = "Glass mosaic of a medical image with optical microscope of a human embryo at development stage t2")
+    parser.add_argument("--p", help="Custom Prompt", default = "Medical image with optical microscope of a human embryo at development stage t2")
 
     
     args=parser.parse_args()
