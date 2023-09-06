@@ -140,7 +140,7 @@ class SynthImageFolder():
         assert len(self.labels) == len(self.img_list)
 
         if debug:
-            with open("test.txt","w") as f:
+            with open("img_and_labels.txt","w") as f:
                 for path,label in zip(self.img_list,labels):
                     print(path,label,file=f)
 
