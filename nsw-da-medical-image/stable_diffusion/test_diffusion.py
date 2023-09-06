@@ -9,7 +9,7 @@ __location__ = os.path.realpath(
 
 
 
-def main(model_id, n_iter, version):
+def main(model_id, n_iter, version, prompt):
 
     output_folder = os.path.join(__location__,'generated_images',f"{version}")
 
@@ -34,7 +34,7 @@ def main(model_id, n_iter, version):
     pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to("cuda")
 
-    prompt = "Medical image with optical microscope of a human embryo at development stage t2"
+   
     for i in range(n_iter):
         image = pipe(prompt).images[0]
         image.save(os.path.join(output_folder_run,f"embryo{i}.png"))
@@ -46,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("--m", help="Model path", default = os.path.join(__location__,'models/v1.1'))
     parser.add_argument("--n", help="Num iterrations", default = 3)
     parser.add_argument("--v", help="Model version", default = "v1_1")
+    parser.add_argument("--p", help="Custom Prompt", default = "Glass mosaic of a medical image with optical microscope of a human embryo at development stage t2")
 
     
     args=parser.parse_args()
@@ -53,5 +54,6 @@ if __name__ == '__main__':
     model = args.m
     m_version = args.v
     n = int(args.n)
+    p = args.p
 
-    main(model_id=model, n_iter=n, version=m_version)
+    main(model_id=model, n_iter=n, version=m_version, prompt=p)
