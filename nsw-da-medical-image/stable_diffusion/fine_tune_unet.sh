@@ -2,14 +2,13 @@
 
 # Set environment variables
 model_version='v1_1'
-export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
+export MODEL_NAME="stabilityai/stable-diffusion-2-1"
 export INSTANCE_DIR="./dataset/AA83-7"
 export CLASS_DIR="path_to_class_images"
 export OUTPUT_DIR="./models/$model_version"
 
 # Create OUTPUT_DIR if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
-
 # Run the Python code
 accelerate launch train_dreambooth.py \
   --pretrained_model_name_or_path="$MODEL_NAME"  \
@@ -34,4 +33,7 @@ echo "Training script completed."
 
 cp ./wandb/latest-run/files/config.yaml "$OUTPUT_DIR"
 
-python test_diffusion.py --m OUTPUT_DIR --n "3" --v model_version
+python test_diffusion.py \
+  --m=$OUTPUT_DIR \
+  --n=3 \
+  --v=$model_version
