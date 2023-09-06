@@ -87,7 +87,7 @@ def get_imgs(root,is_subfolder):
             root = root[:-1]
         vid_name = root.split("/")[-1]
 
-        annotation_path = "data/extracted/embryo_dataset_annotations/"+vid_name+"_phases.csv"
+        annotation_path = "../data/extracted/embryo_dataset_annotations/"+vid_name+"_phases.csv"
         if os.path.exists(annotation_path):
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
