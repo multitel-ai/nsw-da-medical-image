@@ -116,7 +116,7 @@ def get_imgs(root,is_subfolder):
 
 class SynthImageFolder():
 
-    def __init__(self,root,transform=None,max_size=None):
+    def __init__(self,root,transform=None,max_size=None,debug=False):
 
         self.root = root
         self.transform = transform
@@ -125,14 +125,11 @@ class SynthImageFolder():
 
         if len(found_images) == 0:
             labels = np.array([])
-            print("Multiple folders mode")
             folds = glob.glob(os.path.join(root,"*/"))
             for fold in folds:
                 found_image_fold,_,labels_fold = get_imgs(fold,is_subfolder=True)
                 found_images += found_image_fold
                 labels = np.concatenate((labels,labels_fold),axis=0)
-        else:
-            print("Single folder mode")
 
         self.labels = labels
         self.img_list = found_images
@@ -141,12 +138,11 @@ class SynthImageFolder():
             self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
 
         assert len(self.labels) == len(self.img_list)
-        print("Using a total of ",len(self.img_list),"images")
 
-        #For debug
-        with open("test.txt","w") as f:
-            for path,label in zip(self.img_list,labels):
-                print(path,label,file=f)
+        if debug:
+            with open("test.txt","w") as f:
+                for path,label in zip(self.img_list,labels):
+                    print(path,label,file=f)
 
     def __len__(self):
         return len(self.img_list)
@@ -218,11 +214,11 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_data_path", type=str)
-    parser.add_argument("--synth_data_path", type=str)    
-    parser.add_argument("--model_path", type=str)
+    parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
+    parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
+    parser.add_argument("--model_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
     parser.add_argument("--debug",action="store_true")
-    parser.add_argument("--img_size",type=int)
+    parser.add_argument("--img_size",type=int,default=256)
     parser.add_argument("--val_batch_size",type=int,default=50)
     parser.add_argument("--num_workers",type=int,default=4)
     parser.add_argument("--result_fold_path",type=str,default="../results")
@@ -243,13 +239,15 @@ def main():
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
+        model_name = None
     else:
         model = models.densenet121(num_classes=args.num_classes)
         model.load_state_dict(torch.load(args.model_path))
+        model_name = os.path.splitext(os.path.basename(args.model_path))[0]
     model.eval()
     if cuda:
         model = model.cuda()
-    
+  
     #add a hook on the last feature layer of the densenet121 model 
     #to get the feature vector
     vector_list = []
@@ -262,10 +260,10 @@ def main():
     for data_dir_path,is_synth in zip([args.orig_data_path,args.synth_data_path],[False,True]):
 
         dataset_name = get_dataset_name(data_dir_path)
-        mu_path = args.result_fold_path+f"/mu_{dataset_name}.npy"
-        sigma_path = args.result_fold_path+f"/std_{dataset_name}.npy"
-        entropy_path = args.result_fold_path+f"/entropy_{dataset_name}.npy"
-        accuracy_path = args.result_fold_path+f"/accuracy_{dataset_name}.npy"
+        mu_path = args.result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
+        sigma_path = args.result_fold_path+f"/std_{dataset_name}_{model_name}.npy"
+        entropy_path = args.result_fold_path+f"/entropy_{dataset_name}_{model_name}.npy"
+        accuracy_path = args.result_fold_path+f"/accuracy_{dataset_name}_{model_name}.npy"
 
         logit_list = []
         vector_list = []
@@ -277,7 +275,7 @@ def main():
             dataset = SynthImageFolder(data_dir_path,transform=transforms.Compose([
                                                                 transforms.Resize(args.img_size),
                                                                 transforms.CenterCrop(args.img_size),
-                                                                transforms.ToTensor()]),max_size=max_size)
+                                                                transforms.ToTensor()]),max_size=max_size,debug=args.debug)
             
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
@@ -287,8 +285,7 @@ def main():
                 logit_list.append(model(img).cpu())
             
             vectors = torch.cat(vector_list).numpy()
-            print(vectors.shape)
-  
+
             mu = np.mean(vectors, axis=0)
             std = np.cov(vectors, rowvar=False)
 
@@ -324,15 +321,15 @@ def main():
     accuracy_orig_data = stat_dic[orig_dataset]["accuracy"]
     accuracy_synth_data = stat_dic[synth_dataset]["accuracy"]
 
-    csv_path = args.result_fold_path+"/fid.csv"
+    csv_path = args.result_fold_path+"/metrics.csv"
 
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
         with open(csv_path,"w") as f:
-            f.write("model_path,orig_data,synth_data,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
+            f.write("model_name,orig_data,synth_data,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
 
     with open(csv_path,"a") as f:
-        f.write(f"{args.model_path},{orig_dataset},{synth_dataset},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
+        f.write(f"{model_name},{orig_dataset},{synth_dataset},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
 
 if __name__ == "__main__":
     main()
