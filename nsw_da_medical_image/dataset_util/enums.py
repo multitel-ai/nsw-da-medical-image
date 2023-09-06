@@ -31,6 +31,24 @@ class FocalPlane(EnumIdx):
     def suffix(self) -> str:
         return self.value
 
+    @property
+    def pretty(self) -> str:
+        if self == FocalPlane.F_n45:
+            return "F-45"
+        if self == FocalPlane.F_n30:
+            return "F-30"
+        if self == FocalPlane.F_n15:
+            return "F-15"
+        if self == FocalPlane.F_0:
+            return "F+00"
+        if self == FocalPlane.F_p15:
+            return "F+15"
+        if self == FocalPlane.F_p30:
+            return "F+30"
+        if self == FocalPlane.F_p45:
+            return "F+45"
+        raise RuntimeError("non-exhaustive check")
+
 
 class Phase(EnumIdx):
     tPB2 = "tPB2"
