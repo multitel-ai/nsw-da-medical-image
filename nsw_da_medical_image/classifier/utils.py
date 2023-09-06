@@ -6,7 +6,7 @@ Created on Tue Sep  5 14:49:47 2023
 """
 
 import pathlib
-import dataset_util as du
+import nsw_da_medical_image.dataset_util as du
 from torch.utils.data import DataLoader
 import json
 from torchvision.transforms import Resize, ToTensor, Compose, RandomHorizontalFlip, RandomVerticalFlip,RandomRotation
