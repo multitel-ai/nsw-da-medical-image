@@ -35,63 +35,74 @@ def video_from_dir(dir: str) -> du.Video:
     
 
     
-def make_weights_for_balanced_classes(dir):
-    class_dict = {}
-    video_classes = {}
-    videos = os.listdir(f"{dir}embryo_dataset/")
-    for video in videos:
-        info_video = pd.read_csv(f"{dir}embryo_dataset_annotations/{video}_phases.csv",header=None)
-        classes = info_video[0].tolist()
-        n_classes = (info_video[2]-info_video[1]+1).tolist()
-        count_classes_dict = dict(zip(classes,n_classes))
-        video_classes[video] = count_classes_dict
-        
-        for cl,n_cl in count_classes_dict.items():
-            if cl not in class_dict.keys():
-                class_dict[cl] = n_cl
-            else:
-                class_dict[cl]+=n_cl
-                
-    weight_per_class = {}                                    
-    N = float(sum(class_dict.values())) 
+def get_weights_dataset(files,dir,data_aug, mode):
+    data_aug = transforms.Compose([Resize((256, 256)), ToTensor()])
+    base_path = pathlib.Path(dir)
+    if mode == "train":
+        class_dict = {}
+        weights_per_image = []
+        for video in files:
+            info_video = pd.read_csv(f"{dir}embryo_dataset_annotations/{video}_phases.csv",header=None)
+            classes = info_video[0].tolist()
+            n_classes = (info_video[2]-info_video[1]+1).tolist()
+            count_classes_dict = dict(zip(classes,n_classes))
+            
+            
+               
+            for cl,n_cl in count_classes_dict.items():
+                if cl not in class_dict.keys():
+                    class_dict[cl] = n_cl
+                else:
+                    class_dict[cl]+=n_cl
+                        
+        weight_per_class = {}                                    
+        N = float(sum(class_dict.values())) 
     
-    for cl,n_cl in class_dict.items():
-        weight_per_class[cl] = N/float(n_cl)
-    
-    weights = {}
-    for video, count in video_classes.items():
-        for cl,n_cl in count.items():
-            weights[video] = n_cl*weight_per_class[cl]
+        for cl,n_cl in class_dict.items():
+            weight_per_class[cl] = N/float(n_cl)
+            
+        data_set = du.NSWDataset(
+            base_path,
+            videos=[video_from_dir(file) for file in files],
+            planes=[du.FocalPlane.F_0],
+            transform=data_aug)
+              
+        for img,phase, plane,video,frame_number in data_set:
+            weights_per_image.append(weight_per_class[du.Phase.from_idx(phase).label])
         
-    return weights
+        return data_set,weights_per_image
+    else:
+        data_set = du.NSWDataset(
+            base_path,
+            videos=[video_from_dir(file) for file in files],
+            planes=[du.FocalPlane.F_0],
+            transform=data_aug)
+        return data_set
+        
    
 def get_dataloader(data_dir:str,
                    mode:str,
                    batch_size:int,
                    json_file:str):
-    base_path = pathlib.Path(data_dir)
+
 
     kfold = json.load(open(json_file))
-    files = list(kfold[mode].keys())
+    files = list(kfold[mode])
 
     
-    if mode=="train_set":
+    if mode=="train":
         data_aug = transforms.Compose([Resize((256, 256)), RandomHorizontalFlip(),
                                          RandomVerticalFlip(),RandomRotation(90), 
                                          RandomRotation(180), ToTensor(), 
                                          DuplicateFirstChannel()])
         
-        weights=list(kfold[mode].values())
+        data_set, weights = get_weights_dataset(files,data_dir,data_aug, mode)
         sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     else:
         data_aug = transforms.Compose([Resize((256, 256)), ToTensor(), DuplicateFirstChannel()])
+        data_set = get_weights_dataset(files,data_dir,data_aug, mode)
         sampler = None
-        
-    data_set = du.NSWDataset(
-        base_path,
-        videos=[video_from_dir(file) for file in files],
-        planes=[du.FocalPlane.F_0],
-        transform=data_aug)
+    
     
     
     dataloader = DataLoader(data_set, batch_size, sampler = sampler)
