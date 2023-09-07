@@ -31,10 +31,12 @@ def __prep_fn(path_tpl: tuple[pathlib.Path, pathlib.Path, pathlib.Path]):
         tar_file = tarfile.open(file, mode="r")
         tar_file.extractall(dst)
         tar_file.close()
+        print(f"extracted {file} in {dst}")
     else:
         # other file -> copy
         dst_file = dst / file.relative_to(src)
         shutil.copy(file, dst_file)
+        print(f"copied {file} to {dst_file}")
 
 
 def extract_dataset(
@@ -68,6 +70,8 @@ def extract_dataset(
 
     if n_proc is None:
         n_proc = len(all_files)
+
+    print(f"starting extraction in {n_proc} processes (this will take a while)")
 
     args = [(source_directory, destination_directory, path) for path in all_files]
     with multiprocessing.Pool(n_proc) as pool:
