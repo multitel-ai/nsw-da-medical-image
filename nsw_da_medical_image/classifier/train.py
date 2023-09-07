@@ -3,10 +3,10 @@
 
 import torch
 import numpy
-from dataset import NSWDataset
+from nsw_da_medical_image.dataset_util.dataset import NSWDataset
 from torchvision import transforms,models 
 import pathlib
-import dataset_util as du
+import nsw_da_medical_image.dataset_util as du
 import torch
 from torch import nn
 from torch.utils.data import dataloader
@@ -15,11 +15,10 @@ import numpy as np
 import random
 import json
 import argparse
-from torch.utils.tensorboard.writer import SummaryWriter
 import os
-from model import build_model
+from nsw_da_medical_image.classifier.model import build_model
 import wandb
-from utils import get_dataloader
+from nsw_da_medical_image.classifier.utils import get_dataloader
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='0',
@@ -30,14 +29,17 @@ parser.add_argument('--num_epochs', type=int, default=50,
                     help='Max number of epochs')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate')
-parser.add_argument('--data_dir', type=int,
+parser.add_argument('--data_dir', type=str,
                     help='Data path')
-parser.add_argument('--json_file', type=int, default="data_split.json",
+parser.add_argument('--json_file', type=str, default="data_split.json",
                     help='Json file with train/val split')
-parser.add_argument('--pretrained_weights', type=int, default="pretrained",
+parser.add_argument('--pretrained_weights', type=str, default="pretrained",
                     help='Set pretrained weights')
 parser.add_argument('--wandb_project', type=str, default='classifier', 
                     help='wandb project name')
+parser.add_argument('--name', type=str, default='Give me a name !', 
+                    help='wandb run name')
+
 
 
 args = parser.parse_args()
@@ -72,6 +74,7 @@ def run_train(num_epochs: int,
               data_dir: str,
               wandb_project_name: str = None,
               wandb_run_name: str = None):
+    dev = "cuda:"+dev
     mdl = build_model(weights)
     mdl = mdl.to(dev)
     loss = nn.CrossEntropyLoss()
@@ -145,10 +148,9 @@ def run_train(num_epochs: int,
                 
 if __name__ == "__main__":
 
-    run_train(num_epochs=args.num_epochs,lr=args.lr, weights=args.weights_path, 
-              device=args.device, data_dir=args.data_dir,wandb_project=args.wandb_project)
-
-
+    run_train(num_epochs=args.num_epochs,lr=args.lr, weights=args.pretrained_weights, 
+              dev=args.device, data_dir=args.data_dir,wandb_project_name=args.wandb_project, 
+              wandb_run_name=args.name)
 
 
 
