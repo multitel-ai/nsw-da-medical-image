@@ -19,10 +19,10 @@ import os
 from nsw_da_medical_image.classifier.model import build_model
 import wandb
 from nsw_da_medical_image.classifier.utils import get_dataloader
+from datetime import datetime
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--device', type=str, default='0',
-                    help='GPU device', )
 parser.add_argument('--batch_size', type=int, default=16,
                     help='batch size')
 parser.add_argument('--num_epochs', type=int, default=50,
@@ -39,55 +39,71 @@ parser.add_argument('--wandb_project', type=str, default='classifier',
                     help='wandb project name')
 parser.add_argument('--name', type=str, default='Give me a name !', 
                     help='wandb run name')
+parser.add_argument('--save_dir', type=str, default='/App/models', 
+                    help='Directory to save the models to')
 
 
 
 args = parser.parse_args()
 args_pool = {
             'n_class':len(du.Phase),
-            'channels':1,
+            'channels':3,
             'input_size': 256,
             'train_batch_size': args.batch_size,
-            'val_batch_size': 32, 
+            'val_batch_size': 64, 
         }
 
 
     
 ############################# For reproducibility #############################################
-os.environ["CUDA_VISIBLE_DEVICES"] = args.device
 torch.random.manual_seed(0)
 np.random.seed(0)
 random.seed(0)
-if torch.cuda.is_available():
-    print(torch.cuda.get_device_name())
-    torch.cuda.manual_seed(0)
-    torch.backends.cudnn.benchmark = False
-else:
-    print('GPU not available')
+def get_device():
+    if torch.cuda.is_available():
+        print(torch.cuda.get_device_name())
+        torch.multiprocessing.set_sharing_strategy('file_system')
+        torch.cuda.manual_seed(0)
+        torch.backends.cudnn.benchmark = False
+        return torch.device('cuda')
+    else:
+        print('GPU not available')
+        raise Error("Cannot train the network on CPU. Make sure you have a GPU and that it is available.")
 ###############################################################################################
 
 
 def run_train(num_epochs: int,
               lr: float,
               weights: str,
-              dev: torch.device,
               data_dir: str,
               wandb_project_name: str = None,
-              wandb_run_name: str = None):
-    dev = "cuda:"+dev
+              wandb_run_name: str = None,
+              save_dir: str = '/App/models'):
+    dev = get_device()
     mdl = build_model(weights)
     mdl = mdl.to(dev)
     loss = nn.CrossEntropyLoss()
     optim = Adam(mdl.parameters(), lr=lr)
     
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=num_epochs)
-    tr_loader = get_dataloader(data_dir,"train",args_pool['train_batch_size'],args.json_file)
-    val_loader = get_dataloader(data_dir,"valid",args_pool['valid_batch_size'])
+    now = datetime.now()
+    formatted_string = now.strftime("%d-%m_%H-%M")
+    save_dir = Path(save_dir) / (formatted_string + wandb_run_name)
+    os.makedirs(save_dir)
+    os.makedirs(save_dir/"best")
+    os.makedirs(save_dir/"checkpoint")
+    
+    tr_loader = get_dataloader(data_dir,"train",args_pool['train_batch_size'], args.json_file)
+    val_loader = get_dataloader(data_dir,"val",args_pool['val_batch_size'], args.json_file)
+    
+    #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=num_epochs)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=len(tr_loader)*1)
     
     wandb.login()
     wandb.init(project=wandb_project_name, mode="online", name=wandb_run_name, 
             entity='trail23-medical-image-diffusion')
     
+    train_dataset_length = len(tr_loader)
+
     for epoch in range(num_epochs):
         epoch_loss = 0.0
         step = 0
@@ -96,7 +112,7 @@ def run_train(num_epochs: int,
 				
         mdl.train()
         
-        for idx, (img, phase, plane, video) in enumerate(tr_loader):
+        for idx, (img, phase, plane, video, frame) in enumerate(tr_loader):
             step += 1 
             inp = img.to(dev)
             lbl= phase.to(dev)
@@ -110,46 +126,60 @@ def run_train(num_epochs: int,
             
             epoch_loss += loss_pred.item()
             optim.step()
+            
+            lr_scheduler.step(epoch + idx / train_dataset_length)  
 
+            current_lr = optim.param_groups[0]["lr"]
             if step % 100 == 0:
-                print(f"{step}/{len(tr_loader)}, train_loss: {loss_pred.item():.4f}")
+                print(f"{step}/{len(tr_loader)}, train_loss: {loss_pred.item():.4f} // Current lr: {current_lr}")
 
+            wandb.log(
+    		      {'Training Loss/Total Loss': loss_pred.item(), 'Learning rate': current_lr}, 
+    		      step=(epoch*train_dataset_length)+idx)
+        
+        torch.save({
+            'epoch': epoch + 1,
+            'state_dict': mdl.state_dict(),
+            'optimizer': optim.state_dict(),
+            'wandb_run_id': wandb.run.id,
+            'scheduler': lr_scheduler.state_dict()
+        }, save_dir/"checkpoint"/ "checkpoint.pth")
+        
         epoch_loss /= step
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
-        
-        lr_scheduler.step()
-        current_lr = optim.param_groups[0]["lr"]
-
-        wandb.log(
-    		{'Training Loss/Total Loss': epoch_loss, 'Learning rate': current_lr}, 
-    		step=epoch) 
 
 
         mdl.eval()
+        best_acc = 0.0
         with torch.no_grad():
             acc = 0.0
             epoch_loss_val = 0.0
-            for _, (img, phase, _, _) in enumerate(val_loader):
+            for idx, (img, phase, _, _, _) in enumerate(val_loader):
                 inp = img.to(dev)
                 lbl = phase.to(dev)
     
                 pred = mdl(inp)
                 acc += (pred.argmax(dim=1) == lbl).float().mean().item()
                 epoch_loss_val += loss(pred, lbl).mean().item()
-            
-            acc /= len(val_loader)
+
+            acc /= (idx+1)#len(val_loader)
             
             epoch_loss_val /= len(val_loader)
+            
+            print(f"Accuracy after this epoch: {round(acc,4)}")
+            
+            if acc > best_acc:
+                torch.save(mdl.state_dict(), save_dir / "best" / "best_acc.pth")
     
-        wandb.log(
-            {'Validation/Total Loss': epoch_loss_val,
-             'Validation/Accuracy': acc},
-            step=epoch)
+            wandb.log(
+                {'Validation/Total Loss': epoch_loss_val,
+                 'Validation/Accuracy': acc},
+                step=(epoch*train_dataset_length)+idx) 
                 
 if __name__ == "__main__":
 
     run_train(num_epochs=args.num_epochs,lr=args.lr, weights=args.pretrained_weights, 
-              dev=args.device, data_dir=args.data_dir,wandb_project_name=args.wandb_project, 
+              data_dir=args.data_dir,wandb_project_name=args.wandb_project, 
               wandb_run_name=args.name)
 
 
