@@ -15,6 +15,18 @@ import pandas as pd
 import os
 import torch
 
+
+class DuplicateFirstChannel(object):
+    def __call__(self, tensor):
+        """
+        Args:
+            tensor (Tensor): Tensor image of size (C, H, W) to be duplicated along the channel dimension.
+
+        Returns:
+            Tensor: Duplicated tensor image of size (3, H, W).
+        """
+        return torch.cat([tensor, tensor, tensor], dim=0)
+
 def video_from_dir(dir: str) -> du.Video:
     for vid in du.Video:
         if vid.directory == dir:
@@ -66,12 +78,13 @@ def get_dataloader(data_dir:str,
     if mode=="train_set":
         data_aug = transforms.Compose([Resize((256, 256)), RandomHorizontalFlip(),
                                          RandomVerticalFlip(),RandomRotation(90), 
-                                         RandomRotation(180), ToTensor()])
+                                         RandomRotation(180), ToTensor(), 
+                                         DuplicateFirstChannel()])
         
         weights=list(kfold[mode].values())
         sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     else:
-        data_aug = transforms.Compose([Resize((256, 256)), ToTensor()])
+        data_aug = transforms.Compose([Resize((256, 256)), ToTensor(), DuplicateFirstChannel()])
         sampler = None
         
     data_set = du.NSWDataset(
