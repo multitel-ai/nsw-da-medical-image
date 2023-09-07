@@ -177,7 +177,9 @@ class NSWDataset(Dataset[DataItem]):
 
 
 def __label(plane: int, video: int, frame: int):
-    return f"{plane}_{video}_{frame}"
+    plane_val = FocalPlane.from_idx(plane)
+    video_val = Video.from_idx(video)
+    return f"{plane_val.pretty}_{video_val.directory}_{frame}"
 
 
 def label_single(data: DataItem):
