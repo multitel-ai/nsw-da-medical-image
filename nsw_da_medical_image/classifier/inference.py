@@ -38,7 +38,7 @@ def inference(
     data_path = pathlib.Path(data_path)
 
     dataloader = get_dataloader(data_dir=data_path,
-                                mode=val,
+                                mode=split,
                                 batch_size=batch_size,
                                 json_file=json_file)
     
