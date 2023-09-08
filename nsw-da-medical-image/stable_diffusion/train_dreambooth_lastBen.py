@@ -7,6 +7,7 @@ from typing import Optional
 import subprocess
 import sys
 import copy
+import importlib
 
 import torch
 import torch.nn.functional as F
@@ -16,7 +17,7 @@ from torch.utils.data import Dataset
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed, ProjectConfiguration
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel,DiffusionPipeline
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from huggingface_hub import HfFolder, Repository, whoami
@@ -32,6 +33,99 @@ if is_wandb_available():
 
 logger = get_logger(__name__)
 
+def log_validation(
+    text_encoder,
+    tokenizer,
+    unet,
+    vae,
+    args,
+    accelerator,
+    weight_dtype,
+    global_step,
+    prompt_embeds,
+    negative_prompt_embeds,
+):
+    logger.info(
+        f"Running validation... \n Generating {args.num_validation_images} images with prompt:"
+        f" {args.validation_prompt}."
+    )
+
+    pipeline_args = {}
+
+    if vae is not None:
+        pipeline_args["vae"] = vae
+
+    if text_encoder is not None:
+        text_encoder = accelerator.unwrap_model(text_encoder)
+
+    # create pipeline (note: unet and vae are loaded again in float32)
+    pipeline = DiffusionPipeline.from_pretrained(
+        args.pretrained_model_name_or_path,
+        tokenizer=tokenizer,
+        text_encoder=text_encoder,
+        unet=accelerator.unwrap_model(unet),
+        revision=args.revision,
+        torch_dtype=weight_dtype,
+        **pipeline_args,
+    )
+
+    # We train on the simplified learning objective. If we were previously predicting a variance, we need the scheduler to ignore it
+    scheduler_args = {}
+
+    if "variance_type" in pipeline.scheduler.config:
+        variance_type = pipeline.scheduler.config.variance_type
+
+        if variance_type in ["learned", "learned_range"]:
+            variance_type = "fixed_small"
+
+        scheduler_args["variance_type"] = variance_type
+
+    module = importlib.import_module("diffusers")
+    scheduler_class = getattr(module, args.validation_scheduler)
+    pipeline.scheduler = scheduler_class.from_config(pipeline.scheduler.config, **scheduler_args)
+    pipeline = pipeline.to(accelerator.device)
+    pipeline.set_progress_bar_config(disable=True)
+
+    if args.pre_compute_text_embeddings:
+        pipeline_args = {
+            "prompt_embeds": prompt_embeds,
+            "negative_prompt_embeds": negative_prompt_embeds,
+        }
+    else:
+        pipeline_args = {"prompt": args.validation_prompt}
+
+    # run inference
+    generator = None if args.seed is None else torch.Generator(device=accelerator.device).manual_seed(args.seed)
+    images = []
+    if args.validation_images is None:
+        for _ in range(args.num_validation_images):
+            with torch.autocast("cuda"):
+                image = pipeline(**pipeline_args, num_inference_steps=25, generator=generator).images[0]
+            images.append(image)
+    else:
+        for image in args.validation_images:
+            image = Image.open(image)
+            image = pipeline(**pipeline_args, image=image, generator=generator).images[0]
+            images.append(image)
+
+    for tracker in accelerator.trackers:
+        if tracker.name == "tensorboard":
+            np_images = np.stack([np.asarray(img) for img in images])
+            tracker.writer.add_images("validation", np_images, global_step, dataformats="NHWC")
+        if tracker.name == "wandb":
+            tracker.log(
+                {
+                    "validation": [
+                        wandb.Image(image, caption=f"{i}: {args.validation_prompt}") for i, image in enumerate(images)
+                    ]
+                }
+            )
+
+    del pipeline
+    torch.cuda.empty_cache()
+
+    return images
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
@@ -43,10 +137,25 @@ def parse_args():
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
     parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        required=False,
+        help=(
+            "Revision of pretrained model identifier from huggingface.co/models. Trainable model components should be"
+            " float32 precision."
+        ),
+    )
+    parser.add_argument(
         "--tokenizer_name",
         type=str,
         default=None,
         help="Pretrained tokenizer name or path if not the same as model_name",
+    )
+    parser.add_argument(
+        "--pre_compute_text_embeddings",
+        action="store_true",
+        help="Whether or not to pre-compute text embeddings. If text embeddings are pre-computed, the text encoder will not be kept in memory during training and will leave more GPU memory available for training the rest of the model. This is not compatible with `--train_text_encoder`.",
     )
     parser.add_argument(
         "--instance_data_dir",
@@ -88,6 +197,18 @@ def parse_args():
         help=(
             "Minimal class images for prior preservation loss. If not have enough images, additional images will be"
             " sampled with class_prompt."
+        ),
+    )
+    parser.add_argument(
+        "--checkpointing_steps",
+        type=int,
+        default=500,
+        help=(
+            "Save a checkpoint of the training state every X updates. Checkpoints can be used for resuming training via `--resume_from_checkpoint`. "
+            "In the case that the checkpoint is better than the final trained model, the checkpoint can also be used for inference."
+            "Using a checkpoint for inference requires separate loading of the original pipeline and the individual checkpointed model components."
+            "See https://huggingface.co/docs/diffusers/main/en/training/dreambooth#performing-inference-using-a-saved-checkpoint for step by step"
+            "instructions."
         ),
     )
     parser.add_argument(
@@ -183,6 +304,42 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--validation_prompt",
+        type=str,
+        default=None,
+        help="A prompt that is used during validation to verify that the model is learning.",
+    )
+    parser.add_argument(
+        "--num_validation_images",
+        type=int,
+        default=4,
+        help="Number of images that should be generated during validation with `validation_prompt`.",
+    )
+    parser.add_argument(
+        "--validation_steps",
+        type=int,
+        default=100,
+        help=(
+            "Run validation every X steps. Validation consists of running the prompt"
+            " `args.validation_prompt` multiple times: `args.num_validation_images`"
+            " and logging the images."
+        ),
+    )
+    parser.add_argument(
+        "--validation_images",
+        required=False,
+        default=None,
+        nargs="+",
+        help="Optional set of images to use for validation. Used when the target pipeline takes an initial image as input such as when training image variation or superresolution.",
+    )
+    parser.add_argument(
+        "--validation_scheduler",
+        type=str,
+        default="DPMSolverMultistepScheduler",
+        choices=["DPMSolverMultistepScheduler", "DDPMScheduler"],
+        help="Select which scheduler to use for validation. DDPMScheduler is recommended for DeepFloyd IF.",
+    )
+    parser.add_argument(
         "--mixed_precision",
         type=str,
         default="no",
@@ -210,6 +367,17 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--checkpoints_total_limit",
+        type=int,
+        default=None,
+        help=(
+            "Max number of checkpoints to store. Passed as `total_limit` to the `Accelerator` `ProjectConfiguration`."
+            " See Accelerator::save_state https://huggingface.co/docs/accelerate/package_reference/accelerator#accelerate.Accelerator.save_state"
+            " for more details"
+        ),
+    )
+
+    parser.add_argument(
         "--report_to",
         type=str,
         default="wandb",
@@ -225,6 +393,13 @@ def parse_args():
         default=1000000,
         help=("The step at which the text_encoder is no longer trained"),
     )
+
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="",
+        help="wandb project name",
+    )   
 
 
     parser.add_argument(
@@ -578,6 +753,11 @@ def main():
 
     noise_scheduler = DDPMScheduler.from_config(args.pretrained_model_name_or_path, subfolder="scheduler")
 
+    pre_computed_encoder_hidden_states = None
+    validation_prompt_encoder_hidden_states = None
+    validation_prompt_negative_prompt_embeds = None
+    pre_computed_class_prompt_encoder_hidden_states = None
+
     train_dataset = DreamBoothDataset(
         instance_data_root=args.instance_data_dir,
         instance_prompt=args.instance_prompt,
@@ -661,9 +841,10 @@ def main():
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
         tracker_config = vars(copy.deepcopy(args))
-        accelerator.init_trackers("stable-diffusion-2-1-fine-tune-lastBen", config=tracker_config)
+        tracker_config.pop("validation_images")
+        accelerator.init_trackers(args.wandb_project, config=tracker_config)
         wandb.init(
-            project='stable-diffusion-1-4-fine-tune-text-encoder-lastBen',
+            project=args.wandb_project,
             # config={
             #     'instance_prompt':"Medical image with optical micropscope of a human embryo at a certain development stage",
             #     'class_prompt':"Micropscopic image of a human embryo",
@@ -767,6 +948,50 @@ def main():
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
+                
+                if accelerator.is_main_process:
+                    if global_step % args.checkpointing_steps == 0:
+                        # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`
+                        if args.checkpoints_total_limit is not None:
+                            checkpoints = os.listdir(args.output_dir)
+                            checkpoints = [d for d in checkpoints if d.startswith("checkpoint")]
+                            checkpoints = sorted(checkpoints, key=lambda x: int(x.split("-")[1]))
+
+                            # before we save the new checkpoint, we need to have at _most_ `checkpoints_total_limit - 1` checkpoints
+                            if len(checkpoints) >= args.checkpoints_total_limit:
+                                num_to_remove = len(checkpoints) - args.checkpoints_total_limit + 1
+                                removing_checkpoints = checkpoints[0:num_to_remove]
+
+                                logger.info(
+                                    f"{len(checkpoints)} checkpoints already exist, removing {len(removing_checkpoints)} checkpoints"
+                                )
+                                logger.info(f"removing checkpoints: {', '.join(removing_checkpoints)}")
+
+                                for removing_checkpoint in removing_checkpoints:
+                                    removing_checkpoint = os.path.join(args.output_dir, removing_checkpoint)
+                                    shutil.rmtree(removing_checkpoint)
+
+                        save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+                        accelerator.save_state(save_path)
+                        logger.info(f"Saved state to {save_path}")
+
+                    images = []
+
+                    if args.validation_prompt is not None and global_step % args.validation_steps == 0:
+                        images = log_validation(
+                            text_encoder,
+                            tokenizer,
+                            unet,
+                            vae,
+                            args,
+                            accelerator,
+                            weight_dtype,
+                            global_step,
+                            validation_prompt_encoder_hidden_states,
+                            validation_prompt_negative_prompt_embeds,
+                        )
+
+
 
             fll=round((global_step*100)/args.max_train_steps)
             fll=round(fll/4)
