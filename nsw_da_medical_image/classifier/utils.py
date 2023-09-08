@@ -52,8 +52,9 @@ def get_weights(data_dir:str, json_file:str):
         
 
     return torch.tensor(weight_per_class)
-    
-        
+
+def get_test_transforms(resize: tuple = (256,256)) -> transforms.Compose:
+    return transforms.Compose([Resize(resize), Grayscale(num_output_channels=3), ToTensor()])
    
 def get_dataloader(data_dir:str,
                    mode:str,
@@ -72,7 +73,7 @@ def get_dataloader(data_dir:str,
         shuffle = True
         
     else:
-        data_aug = transforms.Compose([Resize((256, 256)), Grayscale(num_output_channels=3), ToTensor()])
+        data_aug = get_test_transforms() 
         
         shuffle= False
         
