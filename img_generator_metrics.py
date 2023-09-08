@@ -219,9 +219,9 @@ def main():
     parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
     parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
-    parser.add_argument("--model_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
+    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
     parser.add_argument("--result_fold_path",type=str)
-    parser.add_argument("--model",type=str)
+    parser.add_argument("--model_architecture",type=str)
 
     parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
     parser.add_argument("--val_batch_size",type=int,default=50)
@@ -231,7 +231,7 @@ def main():
 
     args = parser.parse_args()
 
-    assert args.model in ["densenet121","resnet50"]
+    assert args.model_architecture in ["densenet121","resnet50"]
 
     if not os.path.exists(args.result_fold_path):
         os.makedirs(args.result_fold_path)
@@ -240,19 +240,19 @@ def main():
     torch.set_grad_enabled(False)
 
     # Load model
-    if args.model_path is None:
-        model = getattr(models,args.model)(weights="IMAGENET1K_V1")
+    if args.model_weights_path is None:
+        model = getattr(models,args.model_architecture)(weights="IMAGENET1K_V1")
         if args.debug:
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
         model_name = None
     else:
-        model = getattr(models,args.model)(num_classes=args.num_classes)
+        model = getattr(models,args.model_architecture)(num_classes=args.num_classes)
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        weights = torch.load(args.model_path,map_location=device)
+        weights = torch.load(args.model_weights_path,map_location=device)
         model.load_state_dict(weights)
-        model_name = os.path.splitext(os.path.basename(args.model_path))[0]
+        model_name = os.path.splitext(os.path.basename(args.model_weights_path))[0]
     model.eval()
     if cuda:
         model = model.cuda()
@@ -268,7 +268,7 @@ def main():
         
         vector_list.append(features[0].cpu())
 
-    if args.model == "densenet121":        
+    if args.model_architecture == "densenet121":        
         model.classifier.register_forward_hook(save_output)
     else:
         model.fc.register_forward_hook(save_output)
