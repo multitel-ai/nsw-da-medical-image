@@ -27,7 +27,18 @@ accelerate launch train_dreambooth.py \
   --enable_xformers_memory_efficient_attention
 # Optional: Print a message when the script finishes
 echo "Training script completed."
-cp ./wandb/latest-run/files/config.yaml "$OUTPUT_DIR"
+
+# Find the latest folder created in ./wandb
+latest_wandb_folder=$(find ./wandb -type d -print0 | xargs -0 ls -td | head -1)
+
+# Check if the latest_wandb_folder is not empty
+if [ -n "$latest_wandb_folder" ]; then
+  # Copy the config.yaml file from the latest folder to OUTPUT_DIR
+  cp "$latest_wandb_folder/config.yaml" "$OUTPUT_DIR"
+else
+  echo "No wandb folders found."
+fi
+
 python test_diffusion.py \
   --m=$OUTPUT_DIR \
   --n=3 \
