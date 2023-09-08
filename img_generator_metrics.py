@@ -141,17 +141,17 @@ class OrigImageFolder():
                 found_image_fold,_,labels_fold = get_imgs(fold,True,orig_annot_folder)
                 found_images += found_image_fold
                 labels = np.concatenate((labels,labels_fold),axis=0)
-
+            
         self.labels = labels
         self.img_list = found_images
 
         assert len(self.labels) == len(self.img_list)
 
         if debug:
-            with open("img_and_labels.txt","w") as f:
+            with open("img_and_labels_orig.txt","w") as f:
                 for path,label in zip(self.img_list,labels):
                     print(path,label,file=f)
-
+                    
     def __len__(self):
         return len(self.img_list)
 
@@ -182,7 +182,7 @@ class SynthImageFolder():
         assert len(self.labels) == len(self.img_list)
 
         if debug:
-            with open("img_and_labels.txt","w") as f:
+            with open("img_and_labels_synth.txt","w") as f:
                 for path,label in zip(self.img_list,labels):
                     print(path,label,file=f)
 
@@ -314,7 +314,7 @@ def main():
     stat_dic = {}
 
     synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),max_size=args.max_dataset_size,debug=args.debug)
-    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path)
+    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,debug=args.debug)
 
     for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[args.orig_data_path,args.synth_data_path]):
 
