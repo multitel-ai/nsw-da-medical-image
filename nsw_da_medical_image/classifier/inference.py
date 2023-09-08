@@ -25,9 +25,8 @@ def inference(
     out_class_path: path to the csv file to be created as output for classes
     model_path: path to the trained model weights
     """
-
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = build_model(model_path).to(device)
+    model = build_model(net='densenet121',path=model_path).to(device)
     model.eval()
 
     prob_df = pd.DataFrame(columns=['id'] + [f'class_prob_{i}' for i in range(16)])
@@ -62,6 +61,7 @@ def inference(
             class_preds.append({'id': id, 'class_pred': pred_class})
 
         torch.cuda.empty_cache()
+        del img, batch_predictions
 
     prob_df = pd.concat([prob_df, pd.DataFrame(prob_preds)], ignore_index=True)
     class_df = pd.concat([class_df, pd.DataFrame(class_preds)], ignore_index=True)
