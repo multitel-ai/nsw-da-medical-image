@@ -13,6 +13,8 @@ import glob
 import json
 import sys 
 
+from nsw_da_medical_image.classifier.utils import get_test_transforms
+
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -116,7 +118,7 @@ def get_imgs(root,is_subfolder):
 
 class SynthImageFolder():
 
-    def __init__(self,root,transform=None,max_size=None,debug=False):
+    def __init__(self,root,transform,max_size=None,debug=False):
 
         self.root = root
         self.transform = transform
@@ -218,7 +220,6 @@ def main():
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
     parser.add_argument("--model_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
     parser.add_argument("--debug",action="store_true")
-    parser.add_argument("--img_size",type=int,default=256)
     parser.add_argument("--val_batch_size",type=int,default=50)
     parser.add_argument("--num_workers",type=int,default=4)
     parser.add_argument("--result_fold_path",type=str,default="../results")
@@ -287,10 +288,7 @@ def main():
             # Load image folder
 
             max_size = None if is_synth else args.max_dataset_size
-            dataset = SynthImageFolder(data_dir_path,transform=transforms.Compose([
-                                                                transforms.Resize(args.img_size),
-                                                                transforms.CenterCrop(args.img_size),
-                                                                transforms.ToTensor()]),max_size=max_size,debug=args.debug)
+            dataset = SynthImageFolder(data_dir_path,transform=get_test_transforms(),max_size=max_size,debug=args.debug)
             
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
@@ -341,7 +339,7 @@ def main():
     accuracy_orig_data = stat_dic[orig_dataset]["accuracy"]
     accuracy_synth_data = stat_dic[synth_dataset]["accuracy"]
 
-    csv_path = args.result_fold_path+"/metrics.csv"
+    csv_path = args.result_fold_path+"/img_generator_metrics.csv"
 
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
