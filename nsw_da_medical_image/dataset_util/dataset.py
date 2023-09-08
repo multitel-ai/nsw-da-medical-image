@@ -59,7 +59,7 @@ def _get_video_frames(
         df = pd.read_csv(phase_path, index_col=None, header=None)
 
         first_start = df[df.columns[1]].min()
-        last_end = df[df.columns[1]].max()
+        last_end = df[df.columns[2]].max()
 
         frame_lst = [f for f in frame_lst if f >= first_start and f <= last_end]
 
