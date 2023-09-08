@@ -663,7 +663,7 @@ def main():
         tracker_config = vars(copy.deepcopy(args))
         accelerator.init_trackers("stable-diffusion-2-1-fine-tune-lastBen", config=tracker_config)
         wandb.init(
-            project='stable-diffusion-2-1-fine-tune-lastBen',
+            project='stable-diffusion-1-4-fine-tune-text-encoder-lastBen',
             # config={
             #     'instance_prompt':"Medical image with optical micropscope of a human embryo at a certain development stage",
             #     'class_prompt':"Micropscopic image of a human embryo",
