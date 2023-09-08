@@ -1,85 +1,58 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Sep  8 12:01:03 2023
+
+@author: Laura
+"""
+
 import pandas as pd
-import numpy as np
-from sklearn.metrics import roc_curve, auc, confusion_matrix
-from sklearn.preprocessing import label_binarize
-import matplotlib.pyplot as plt
-import csv
-import os
-import sys
+from sklearn.metrics import confusion_matrix,roc_auc_score,precision_recall_curve,auc
 
-def calculate_metrics(y_true, y_prob, n_classes):
-    metrics = {}
-    metrics['Confusion Matrix'] = confusion_matrix(y_true, np.argmax(y_prob, axis=1))
 
-    # Binarize the true labels
-    y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
-
-    # Compute ROC curve and ROC area for each class
-    fpr = dict()
-    tpr = dict()
-    roc_auc = dict()
-    for i in range(n_classes):
-        fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_prob[:, i])
-        roc_auc[i] = auc(fpr[i], tpr[i])
-
-    metrics['ROC Curve'] = (fpr, tpr)
-    metrics['AUC'] = roc_auc
-
-    return metrics
-
-def save_metrics_to_csv(metrics, output_folder):
-    with open(os.path.join(output_folder, 'auc.csv'), 'w') as f:
-        writer = csv.writer(f)
-        for key, value in metrics['AUC'].items():
-            writer.writerow([key, value])
-
-    np.savetxt(os.path.join(output_folder, 'confusion_matrix.csv'), metrics['Confusion Matrix'], delimiter=",")
-
-def plot_curves(fpr, tpr, output_folder):
-    for i in range(len(fpr)):
-        plt.figure()
-        plt.plot(fpr[i], tpr[i], color='darkorange', lw=2)
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'ROC curve of class {i}')
-        plt.savefig(os.path.join(output_folder, f'roc_curve_class_{i}.png'))
-
-def main(ground_truth_csv, predictions_csv, softmax_csv, output_folder):
-    gt_df = pd.read_csv(ground_truth_csv)
-    pred_df = pd.read_csv(predictions_csv)
-    softmax_df = pd.read_csv(softmax_csv)
-    val_gt_df = pd.read_csv('/App/code/eval-gt.csv')
+def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes):
+    pred_labels = []
+    true_labels= []
+    prob_pred_labels = []
+    prec_class = []
+    rec_class = []
+    f1_score_class = []
+    pr_auc_class = []
     
-    # Align dataframes based on common IDs
-    common_ids = set(gt_df['identifier']).intersection(set(pred_df['id']))
-    gt_df = gt_df[gt_df['identifier'].isin(common_ids)]
-    pred_df = pred_df[pred_df['id'].isin(common_ids)]
-    softmax_df = softmax_df[softmax_df['id'].isin(common_ids)]
+    true_info = pd.read_csv(gt_csv)
+    pred_info = pd.read_csv(pred_labels_csv)
+    prob_pred_info = pd.read_csv(prob_pred_labels_csv)
+    true_dict = dict(zip(true_info["identifier"],true_info["phase-index"]))
+    pred_dict = dict(zip(pred_info["id"],pred_info["class_pred"]))
 
-    # Sort and realign based on IDs
-    gt_df.sort_values('identifier', inplace=True)
-    pred_df.sort_values('id', inplace=True)
-    softmax_df.sort_values('id', inplace=True)
+    prob_pred_dict = {}
+    for index, rows in prob_pred_info.iterrows():
+        prob_pred_dict[rows.id] =list(rows[1:])
+          
+    
 
-    y_true = gt_df['phase-index'].values
-    y_prob = softmax_df.loc[:, softmax_df.columns.str.startswith('class_prob_')].values
+    for id,cl in pred_dict.items():
+        true_labels.append(true_dict[id])
+        pred_labels.append(cl)
+        prob_pred_labels.append(prob_pred_dict[id])
+    
+    conf_mat = confusion_matrix(true_labels, pred_labels)
+    norm_conf_mat = confusion_matrix(true_labels, pred_labels,normalize='true')
+    acc_balanced = norm_conf_mat.diagonal().sum() / norm_conf_mat.sum()
+    for i in range(n_classes):
+        TP_c = norm_conf_mat[i, i]
+        FP_c = norm_conf_mat[:, i].sum() - TP_c
+        FN_c = norm_conf_mat[i, :].sum() - TP_c
+        
+        prec_class.append(TP_c/(TP_c + FP_c))
+        rec_class.append(TP_c / (TP_c + FN_c))
+        f1_score_class.append(TP_c / (TP_c + 0.5 * FP_c + 0.5 * FN_c))
+    
+        true_labels_cl = [i if (label == i) else 0 for label in true_labels]
+        prob_pred_labels_cl = [prob_pred_label[i] for prob_pred_label in prob_pred_labels]
+        prec_cl, rec_cl, _ = precision_recall_curve(true_labels_cl,prob_pred_labels_cl)
+        pr_auc_class.append(auc(rec_cl, prec_cl))
+        
+    roc_auc_class = roc_auc_score(true_labels, prob_pred_labels, average = None, multi_class = 'ovr')
+    
+    return conf_mat, norm_conf_mat, acc_balanced, prec_class, rec_class, f1_score_class,roc_auc_class,pr_auc_class
 
-    n_classes = y_prob.shape[1]
-
-    # Calculate metrics
-    metrics = calculate_metrics(y_true, y_prob, n_classes)
-
-    # Save metrics to CSV
-    save_metrics_to_csv(metrics, output_folder)
-
-    # Plot and save ROC curves
-    plot_curves(metrics['ROC Curve'][0], metrics['ROC Curve'][1], output_folder)
-
-if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print("Usage: python <script_name>.py <ground_truth_csv_path> <predictions_csv_path> <softmax_csv_path> <output_folder_path>")
-    else:
-        main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
