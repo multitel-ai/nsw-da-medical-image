@@ -101,7 +101,6 @@ def run_train(num_epochs: int,
             wandb.log(
     		      {'Training Loss/Total Loss': loss_pred.item(), 'Learning rate': current_lr}, 
     		      step=(epoch*train_dataset_length)+tidx)
-            break
         
         torch.save({
             'epoch': epoch + 1,
