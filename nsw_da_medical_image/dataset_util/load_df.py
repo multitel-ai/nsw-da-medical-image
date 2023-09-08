@@ -3,7 +3,8 @@ import pathlib
 import typing
 import pandas as pd
 
-from .enums import FocalPlane, Phase, Video
+from .enums import FocalPlane, Video
+from .dataset import VideoPhases
 
 
 class DSRow(typing.TypedDict):
@@ -80,17 +81,9 @@ def analyze(
         check_df(image_df)
 
     # Video annotations: where does each phase start and end ?
-    annotation_dir = prefix + "_annotations"
-    annotation_dict: dict[Video, dict[Phase, tuple[int, int]]] = {}
+    annotation_dict: dict[Video, VideoPhases] = {}
     for video in Video:
-        annotation = pd.read_csv(
-            processed_dataset / annotation_dir / f"{video.directory}_phases.csv",
-            index_col=None,
-            header=None,
-        )
-        phase_dict: dict[Phase, tuple[int, int]] = {}
-        for _, phase, p_s, p_e in annotation.itertuples():
-            phase_dict[Phase(phase)] = (p_s, p_e)
+        phase_dict = VideoPhases.read(processed_dataset, video)
         annotation_dict[video] = phase_dict
 
     # Video timestamps: what does each frame index represent ?
