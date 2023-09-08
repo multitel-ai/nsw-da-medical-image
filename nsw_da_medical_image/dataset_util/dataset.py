@@ -20,6 +20,58 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 PREFIX = "embryo_dataset"
 
 
+class PhaseRange(typing.NamedTuple):
+    first: int
+    last: int
+
+    @property
+    def count(self):
+        return self.last - self.first + 1
+
+
+class VideoPhases(typing.NamedTuple):
+    # for each phase : first, last
+    content: dict[Phase, PhaseRange]
+
+    @staticmethod
+    def read(base_path: pathlib.Path, video: str | Video):
+        if isinstance(video, Video):
+            video = video.directory
+        csv_p = base_path / (PREFIX + "_annotations") / f"{video}_phases.csv"
+        df = pd.read_csv(csv_p, index_col=None, header=None)
+        df.columns = ["phase", "first", "last"]
+
+        _content: dict[Phase, PhaseRange] = {}
+        for _, phase, first, last in df.itertuples():
+            _content[Phase(phase)] = PhaseRange(first, last)
+
+        return VideoPhases(_content)
+
+    def count_phases(self):
+        "return the *reported* number of annotated frames for each phase, actual may be lower"
+        return {p: r.count for p, r in self.content.items()}
+
+    def filter_frames(self, frames: typing.Iterable[int]):
+        min_frame = min(pr.first for pr in self.content.values())
+        max_frame = max(pr.last for pr in self.content.values())
+
+        return [f for f in frames if min_frame <= f and f <= max_frame]
+
+    def annotate(self, frame: int):
+        "annotate a frame, it must be annotated in the CSV"
+        for phase, range in self.content.items():
+            if range.first > frame:
+                continue
+            if range.last < frame:
+                continue
+            return phase
+        raise ValueError(f"{frame=} is not annotated")
+
+    def annotate_lst(self, frames: typing.Iterable[int]):
+        "annotate all frames, they must be annotated in the CSV"
+        return [self.annotate(f) for f in frames]
+
+
 class DataItem(typing.NamedTuple):
     "how the tuples of the Dataset are structured"
 
@@ -35,6 +87,7 @@ class VideoMetadata(typing.NamedTuple):
     frames: list[int]  # values in the filenames
     prefix: str  # filename prefix to find the path of the image
     cum_num_frames: int  # amount of frames of all previous videos in the list
+    phases: VideoPhases
 
 
 def _get_video_frames(
@@ -55,13 +108,8 @@ def _get_video_frames(
             frame_number = int(frame_file.stem[idx:])
             frame_lst.append(frame_number)
 
-        phase_path = plane_path.parent / (PREFIX + "_annotations") / f"{_video.directory}_phases.csv"
-        df = pd.read_csv(phase_path, index_col=None, header=None)
-
-        first_start = df[df.columns[1]].min()
-        last_end = df[df.columns[2]].max()
-
-        frame_lst = [f for f in frame_lst if f >= first_start and f <= last_end]
+        phases = VideoPhases.read(plane_path.parent, _video)
+        frame_lst = phases.filter_frames(frame_lst)
 
         prefix = frame_file.stem[:idx]  # type:ignore
         metadata = VideoMetadata(
@@ -69,6 +117,7 @@ def _get_video_frames(
             frames=sorted(frame_lst),
             prefix=prefix,
             cum_num_frames=_running_count,
+            phases=phases
         )
         videos_metadata.append(metadata)
         _running_count += len(frame_lst)
@@ -138,7 +187,7 @@ class NSWDataset(Dataset[DataItem]):
         video = Video.from_idx(metadata.video)
         frame = metadata.frames[in_plane_idx - metadata.cum_num_frames]
 
-        return plane, video, frame, metadata.prefix
+        return plane, video, frame, metadata.prefix, metadata.phases
 
     def get_directory(self, plane: FocalPlane, video: Video):
         return self.base_path / (PREFIX + plane.suffix) / video.directory
@@ -146,30 +195,19 @@ class NSWDataset(Dataset[DataItem]):
     def find_image(self, vid_dir: pathlib.Path, prefix: str, frame: int):
         return vid_dir / (prefix + str(frame) + ".jpeg")
 
-    def get_phase(self, video: Video, frame: int) -> int:
-        path = (
-            self.base_path / (PREFIX + "_annotations") / f"{video.directory}_phases.csv"
-        )
-        df = pd.read_csv(path, index_col=None, header=None)
-        for _, phase, ps, pe in df.itertuples():
-            if frame < ps or frame > pe:
-                continue
-            return Phase(phase).idx()
-        raise RuntimeError("frames without phases should have been discarded")
-
     def __getitem__(self, index) -> DataItem:
-        plane, video, frame, prefix = self.un_flatten_idx(index)
+        plane, video, frame, prefix, phases = self.un_flatten_idx(index)
 
         image_path = self.find_image(self.get_directory(plane, video), prefix, frame)
         image = Image.open(image_path)
 
-        phase = self.get_phase(video, frame)
+        phase = phases.annotate(frame)
 
         data = self.transform(image)
 
         return DataItem(
             image=data,
-            phase=phase,
+            phase=phase.idx(),
             plane=plane.idx(),
             video=video.idx(),
             frame_number=frame,
@@ -226,7 +264,7 @@ def __main():
 
     ds = NSWDataset(pathlib.Path(args.dataset), videos=videos)
     for idx in range(len(ds)):
-        plane, video, frame, _ = ds.un_flatten_idx(idx)
+        plane, video, frame, _, _ = ds.un_flatten_idx(idx)
         try:
             ds[idx]
         except OSError as e:
