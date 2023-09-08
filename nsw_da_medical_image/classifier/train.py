@@ -18,7 +18,7 @@ import argparse
 import os
 from nsw_da_medical_image.classifier.model import build_model
 import wandb
-from nsw_da_medical_image.classifier.utils import get_dataloader
+from nsw_da_medical_image.classifier.utils import get_dataloader,get_weights
 from datetime import datetime
 from pathlib import Path
 
@@ -68,7 +68,7 @@ def get_device():
         return torch.device('cuda')
     else:
         print('GPU not available')
-        raise Error("Cannot train the network on CPU. Make sure you have a GPU and that it is available.")
+        # raise Error("Cannot train the network on CPU. Make sure you have a GPU and that it is available.")
 ###############################################################################################
 
 
@@ -82,7 +82,7 @@ def run_train(num_epochs: int,
     dev = get_device()
     mdl = build_model(weights)
     mdl = mdl.to(dev)
-    loss = nn.CrossEntropyLoss()
+    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file))
     optim = Adam(mdl.parameters(), lr=lr)
     
     now = datetime.now()

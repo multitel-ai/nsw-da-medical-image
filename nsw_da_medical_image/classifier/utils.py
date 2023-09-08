@@ -23,49 +23,36 @@ def video_from_dir(dir: str) -> du.Video:
     
 
     
-def get_weights_dataset(files,dir,data_aug, mode):
-    base_path = pathlib.Path(dir)
-    if mode == "train":
-        class_dict = {}
-        weights_per_image = []
-        for video in files:
-            info_video = pd.read_csv(f"{dir}embryo_dataset_annotations/{video}_phases.csv",header=None)
-            classes = info_video[0].tolist()
-            n_classes = (info_video[2]-info_video[1]+1).tolist()
-            count_classes_dict = dict(zip(classes,n_classes))
-            
-            
-               
-            for cl,n_cl in count_classes_dict.items():
-                if cl not in class_dict.keys():
-                    class_dict[cl] = n_cl
-                else:
-                    class_dict[cl]+=n_cl
-                        
-        weight_per_class = {}                                    
-        N = float(sum(class_dict.values())) 
+def get_weights(data_dir:str, json_file:str):
     
-        for cl,n_cl in class_dict.items():
-            weight_per_class[cl] = N/float(n_cl)
+    kfold = json.load(open(json_file))
+    videos = list(kfold["train"])
+    class_dict = {}
+
+    for video in videos:
+        info_video = pd.read_csv(f"{data_dir}embryo_dataset_annotations/{video}_phases.csv",header=None)
+        classes = info_video[0].tolist()
+        n_classes = (info_video[2]-info_video[1]+1).tolist()
+        count_classes_dict = dict(zip(classes,n_classes))
+        
+           
+        for cl,n_cl in count_classes_dict.items():
+            if cl not in class_dict.keys():
+                class_dict[cl] = n_cl
+            else:
+                class_dict[cl]+=n_cl
+                    
+    weight_per_class = []                                    
+    N = float(sum(class_dict.values())) 
+
+    for i in range(len(class_dict.items())):
+        cl = du.Phase.from_idx(i).label
+        weight_per_class.append( N/float(class_dict[cl]))
             
-        data_set = du.NSWDataset(
-            base_path,
-            videos=[video_from_dir(file) for file in files],
-            planes=[du.FocalPlane.F_0],
-            transform=data_aug)
-              
-        #for img,phase, plane,video,frame_number in data_set:
-        #    weights_per_image.append(weight_per_class[du.Phase.from_idx(phase).label])
+        
 
-
-        return data_set,weights_per_image
-    else:
-        data_set = du.NSWDataset(
-            base_path,
-            videos=[video_from_dir(file) for file in files],
-            planes=[du.FocalPlane.F_0],
-            transform=data_aug)
-        return data_set
+    return torch.tensor(weight_per_class)
+    
         
    
 def get_dataloader(data_dir:str,
@@ -75,24 +62,28 @@ def get_dataloader(data_dir:str,
 
     kfold = json.load(open(json_file))
     files = list(kfold[mode])
-
+    base_path = pathlib.Path(data_dir)
     
     if mode=="train":
         data_aug = transforms.Compose([Resize((256, 256)), RandomHorizontalFlip(),
                                          RandomVerticalFlip(),RandomRotation(90), 
                                          RandomRotation(180), Grayscale(num_output_channels=3),
                                          ToTensor()])
+        shuffle = True
         
-        data_set, weights = get_weights_dataset(files,data_dir,data_aug, mode)
-        sampler = None#torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     else:
         data_aug = transforms.Compose([Resize((256, 256)), Grayscale(num_output_channels=3), ToTensor()])
-        data_set = get_weights_dataset(files,data_dir,data_aug, mode)
-        sampler = None
+        
+        shuffle= False
+        
+    data_set = du.NSWDataset(
+        base_path,
+        videos=[video_from_dir(file) for file in files],
+        planes=[du.FocalPlane.F_0],
+        transform=data_aug)
     
     
-    
-    dataloader = DataLoader(data_set, batch_size, sampler = sampler)
+    dataloader = DataLoader(data_set, batch_size, shuffle = shuffle)
     return dataloader
 
 
