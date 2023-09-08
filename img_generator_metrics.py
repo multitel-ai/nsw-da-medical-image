@@ -69,7 +69,7 @@ def get_dataset_name(dataset_path):
     dataset_name = dataset_path.split("/")[-1]
     return dataset_name
 
-def get_imgs(root,is_subfolder):
+def get_imgs(root,is_subfolder,orig_annot_folder=None):
     found_images = []
     for ext in ALLOWED_EXT:
         found_images += glob.glob(os.path.join(root,"*."+ext))
@@ -89,7 +89,7 @@ def get_imgs(root,is_subfolder):
             root = root[:-1]
         vid_name = root.split("/")[-1]
 
-        annotation_path = "../data/extracted/embryo_dataset_annotations/"+vid_name+"_phases.csv"
+        annotation_path = os.path.join(orig_annot_folder,vid_name+"_phases.csv")
         if os.path.exists(annotation_path):
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
@@ -118,18 +118,18 @@ def get_imgs(root,is_subfolder):
 
 class SynthImageFolder():
 
-    def __init__(self,root,transform,max_size=None,debug=False):
+    def __init__(self,root,transform,max_size=None,debug=False,orig_annot_folder=None):
 
         self.root = root
         self.transform = transform
         
-        found_images,_,labels = get_imgs(root,is_subfolder=False)
+        found_images,_,labels = get_imgs(root,is_subfolder=False,orig_annot_folder=orig_annot_folder)
 
         if len(found_images) == 0:
             labels = np.array([])
             folds = glob.glob(os.path.join(root,"*/"))
             for fold in folds:
-                found_image_fold,_,labels_fold = get_imgs(fold,is_subfolder=True)
+                found_image_fold,_,labels_fold = get_imgs(fold,is_subfolder=True,orig_annot_folder=orig_annot_folder)
                 found_images += found_image_fold
                 labels = np.concatenate((labels,labels_fold),axis=0)
 
@@ -218,14 +218,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
+    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
     parser.add_argument("--model_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
-    parser.add_argument("--debug",action="store_true")
+    parser.add_argument("--result_fold_path",type=str)
+    parser.add_argument("--model",type=str)
+
+    parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
     parser.add_argument("--val_batch_size",type=int,default=50)
-    parser.add_argument("--num_workers",type=int,default=4)
-    parser.add_argument("--result_fold_path",type=str,default="../results")
+    parser.add_argument("--num_workers",type=int,default=0)
     parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
-    parser.add_argument("--model",type=str,default="densenet121")
+
     args = parser.parse_args()
 
     assert args.model in ["densenet121","resnet50"]
@@ -288,7 +291,8 @@ def main():
             # Load image folder
 
             max_size = None if is_synth else args.max_dataset_size
-            dataset = SynthImageFolder(data_dir_path,transform=get_test_transforms(),max_size=max_size,debug=args.debug)
+            
+            dataset = SynthImageFolder(data_dir_path,transform=get_test_transforms(),max_size=max_size,debug=args.debug,orig_annot_folder=args.orig_data_annot_folder)
             
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
