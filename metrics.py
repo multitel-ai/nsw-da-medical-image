@@ -56,7 +56,7 @@ def shorten_dataset(img_list,labels,size=1000):
 
                     img_dic[label][video_name].pop(ind)
 
-    return new_img_list,new_labels
+    return new_img_list,np.array(new_labels)
 
 def get_img_ind(img_path):
     return int(os.path.splitext(os.path.basename(img_path))[0].split("RUN")[1])
@@ -153,7 +153,7 @@ class SynthImageFolder():
             img = self.transform(img)
         if img.shape[0] == 1:
             img = np.repeat(img,3,0)
-        return img
+        return img,self.labels[idx]
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     #https://github.com/mseitzer/pytorch-fid/blob/master/src/pytorch_fid/fid_score.py#L152
@@ -222,9 +222,12 @@ def main():
     parser.add_argument("--val_batch_size",type=int,default=50)
     parser.add_argument("--num_workers",type=int,default=4)
     parser.add_argument("--result_fold_path",type=str,default="../results")
-    parser.add_argument("--num_classes",type=int,default=15)
+    parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
+    parser.add_argument("--model",type=str,default="densenet121")
     args = parser.parse_args()
+
+    assert args.model in ["densenet121","resnet50"]
 
     if not os.path.exists(args.result_fold_path):
         os.makedirs(args.result_fold_path)
@@ -234,15 +237,17 @@ def main():
 
     # Load model
     if args.model_path is None:
-        model = models.densenet121(weights="IMAGENET1K_V1")
+        model = getattr(models,args.model)(weights="IMAGENET1K_V1")
         if args.debug:
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
         model_name = None
     else:
-        model = models.densenet121(num_classes=args.num_classes)
-        model.load_state_dict(torch.load(args.model_path))
+        model = getattr(models,args.model)(num_classes=args.num_classes)
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        weights = torch.load(args.model_path,map_location=device)
+        model.load_state_dict(weights)
         model_name = os.path.splitext(os.path.basename(args.model_path))[0]
     model.eval()
     if cuda:
@@ -252,8 +257,17 @@ def main():
     #to get the feature vector
     vector_list = []
     def save_output(_,features,__):
+        features = features[0]
+
+        if args.debug:
+            features = features[:,:10]
+        
         vector_list.append(features[0].cpu())
-    model.classifier.register_forward_hook(save_output)
+
+    if args.model == "densenet121":        
+        model.classifier.register_forward_hook(save_output)
+    else:
+        model.fc.register_forward_hook(save_output)
 
     stat_dic = {}
 
@@ -267,6 +281,7 @@ def main():
 
         logit_list = []
         vector_list = []
+        labels_list = []
 
         if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
             # Load image folder
@@ -279,11 +294,16 @@ def main():
             
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
-            for img in dataloader:
+            for i,(imgs,labels) in enumerate(dataloader):
                 if cuda:
-                    img = img.cuda()
-                logit_list.append(model(img).cpu())
+                    imgs = imgs.cuda()
+                logit_list.append(model(imgs).cpu())
+                labels_list.append(labels)
+
+                if i > 1 and args.debug:
+                    break
             
+            labels = torch.cat(labels_list).numpy()
             vectors = torch.cat(vector_list).numpy()
 
             mu = np.mean(vectors, axis=0)
@@ -300,7 +320,7 @@ def main():
             np.save(entropy_path,entropy)
 
             predictions = torch.argmax(logits,dim=1).numpy()
-            accuracy = (predictions == dataset.labels).mean()
+            accuracy = (predictions == labels).astype(float).mean()
             np.save(accuracy_path,accuracy)
 
         else:
