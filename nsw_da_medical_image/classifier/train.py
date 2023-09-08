@@ -80,7 +80,7 @@ def run_train(num_epochs: int,
               wandb_run_name: str = None,
               save_dir: str = '/App/models'):
     dev = get_device()
-    mdl = build_model(weights)
+    mdl = build_model(path=weights)
     mdl = mdl.to(dev)
     loss = nn.CrossEntropyLoss()
     optim = Adam(mdl.parameters(), lr=lr)
