@@ -82,7 +82,7 @@ def run_train(num_epochs: int,
     dev = get_device()
     mdl = build_model(path=weights)
     mdl = mdl.to(dev)
-    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file))
+    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(dev))
     optim = Adam(mdl.parameters(), lr=lr)
     
     now = datetime.now()
