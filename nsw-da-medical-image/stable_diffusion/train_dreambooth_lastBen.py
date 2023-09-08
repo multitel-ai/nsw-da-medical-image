@@ -741,13 +741,13 @@ def main():
                     target, target_prior = torch.chunk(target, 2, dim=0)
 
                     # Compute instance loss
-                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="none").mean([1, 2, 3]).mean()
+                    instance_loss = F.mse_loss(model_pred.float(), target.float(), reduction="none").mean([1, 2, 3]).mean()
 
                     # Compute prior loss
                     prior_loss = F.mse_loss(model_pred_prior.float(), target_prior.float(), reduction="mean")
 
                     # Add the prior loss to the instance loss.
-                    loss = loss + args.prior_loss_weight * prior_loss
+                    loss = instance_loss + args.prior_loss_weight * prior_loss
                 else:
                     loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
@@ -773,7 +773,10 @@ def main():
             pr=bar(fll)
             
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
-            wandb.log({"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]})
+            if args.with_prior_preservation:
+                wandb.log({"loss": loss.detach().item(), "prior loss": prior_loss.detach().item(),"instance loss": instance_loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]})
+            else:
+                wandb.log({"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]})
             progress_bar.set_postfix(**logs)
             progress_bar.set_description_str("Progress:"+pr)
             accelerator.log(logs, step=global_step)
