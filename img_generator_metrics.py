@@ -69,12 +69,12 @@ def get_dataset_name(dataset_path):
     dataset_name = dataset_path.split("/")[-1]
     return dataset_name
 
-def get_imgs(root,is_subfolder,orig_annot_folder=None):
+def get_imgs(root,is_orig_data,orig_annot_folder=None):
     found_images = []
     for ext in ALLOWED_EXT:
         found_images += glob.glob(os.path.join(root,"*."+ext))
 
-    if os.path.exists(os.path.join(root,"metadata.json")):
+    if not is_orig_data:
    
         with open(os.path.join(root,"metadata.json"),"r") as f:
             metadata = json.load(f)
@@ -107,31 +107,71 @@ def get_imgs(root,is_subfolder,orig_annot_folder=None):
             found_images,labels = zip(*img_and_labels)
 
         else:
-            if is_subfolder:
-                raise ValueError("No metadata.json or corresponding phases.csv found. Root="+root)
-            else:
-                labels = None
+            raise ValueError("No metadata.json or corresponding phases.csv found. Root="+root)
 
         focal_plane = None
 
     return found_images,focal_plane,labels
 
-class SynthImageFolder():
+def getitem(idx,img_list,transform,labels):
+    img = Image.open(img_list[idx])
+    if transform is not None:
+        img = transform(img)
+    if img.shape[0] == 1:
+        img = np.repeat(img,3,0)
+    return img,labels[idx]
 
-    def __init__(self,root,transform,max_size=None,debug=False,orig_annot_folder=None):
+class OrigImageFolder():
+    
+    def __init__(self,root,transform,orig_annot_folder,split_file_path,debug=False):
 
         self.root = root
         self.transform = transform
         
-        found_images,_,labels = get_imgs(root,is_subfolder=False,orig_annot_folder=orig_annot_folder)
-
-        if len(found_images) == 0:
-            labels = np.array([])
-            folds = glob.glob(os.path.join(root,"*/"))
-            for fold in folds:
-                found_image_fold,_,labels_fold = get_imgs(fold,is_subfolder=True,orig_annot_folder=orig_annot_folder)
+        #Load the json file 
+        with open(split_file_path) as f:
+            split_dic = json.load(f)    
+    
+        found_images = []
+        labels = np.array([])
+        folds = glob.glob(os.path.join(root,"*/"))
+        for fold in folds:
+            vid_name = fold.split("/")[-2]
+            if vid_name in split_dic["test"]:
+                found_image_fold,_,labels_fold = get_imgs(fold,True,orig_annot_folder)
                 found_images += found_image_fold
                 labels = np.concatenate((labels,labels_fold),axis=0)
+
+        self.labels = labels
+        self.img_list = found_images
+
+        assert len(self.labels) == len(self.img_list)
+
+        if debug:
+            with open("img_and_labels.txt","w") as f:
+                for path,label in zip(self.img_list,labels):
+                    print(path,label,file=f)
+
+    def __len__(self):
+        return len(self.img_list)
+
+    def __getitem__(self,idx):
+        return getitem(idx,self.img_list,self.transform,self.labels)
+
+class SynthImageFolder():
+
+    def __init__(self,root,transform,max_size=None,debug=False):
+
+        self.root = root
+        self.transform = transform
+        
+        found_images = []
+        labels = np.array([])
+        folds = glob.glob(os.path.join(root,"*/"))
+        for fold in folds:
+            found_image_fold,_,labels_fold = get_imgs(fold,False)
+            found_images += found_image_fold
+            labels = np.concatenate((labels,labels_fold),axis=0)
 
         self.labels = labels
         self.img_list = found_images
@@ -150,12 +190,7 @@ class SynthImageFolder():
         return len(self.img_list)
 
     def __getitem__(self,idx):
-        img = Image.open(self.img_list[idx])
-        if self.transform is not None:
-            img = self.transform(img)
-        if img.shape[0] == 1:
-            img = np.repeat(img,3,0)
-        return img,self.labels[idx]
+        return getitem(idx,self.img_list,self.transform,self.labels)
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     #https://github.com/mseitzer/pytorch-fid/blob/master/src/pytorch_fid/fid_score.py#L152
@@ -219,9 +254,12 @@ def main():
     parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
     parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
-    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
     parser.add_argument("--result_fold_path",type=str)
+    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.")
+
+    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
     parser.add_argument("--model_architecture",type=str)
+
 
     parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
     parser.add_argument("--val_batch_size",type=int,default=50)
@@ -275,7 +313,10 @@ def main():
 
     stat_dic = {}
 
-    for data_dir_path,is_synth in zip([args.orig_data_path,args.synth_data_path],[False,True]):
+    synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),max_size=args.max_dataset_size,debug=args.debug)
+    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path)
+
+    for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[args.orig_data_path,args.synth_data_path]):
 
         dataset_name = get_dataset_name(data_dir_path)
         mu_path = args.result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
@@ -288,12 +329,7 @@ def main():
         labels_list = []
 
         if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
-            # Load image folder
 
-            max_size = None if is_synth else args.max_dataset_size
-            
-            dataset = SynthImageFolder(data_dir_path,transform=get_test_transforms(),max_size=max_size,debug=args.debug,orig_annot_folder=args.orig_data_annot_folder)
-            
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
             for i,(imgs,labels) in enumerate(dataloader):
