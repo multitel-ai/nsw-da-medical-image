@@ -13,7 +13,7 @@ from nsw_da_medical_image.dataset_util import dataset
 import nsw_da_medical_image.dataset_util as du
 from nsw_da_medical_image.classifier.model import build_model
 from nsw_da_medical_image.classifier.utils import get_dataloader
-from nsw_da_medical_image.classifier.loss import FocalLoss
+
 
 # Ensuring Reproducibility
 def set_seed():
@@ -50,7 +50,11 @@ def run_train(architecture: str,
     device = get_device()
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
-    loss = FocalLoss()#nn.CrossEntropyLoss()
+    if args.loss == 'cross_entropy':
+        loss = nn.CrossEntropyLoss()
+    else:
+        from nsw_da_medical_image.classifier.loss import FocalLoss
+        loss = FocalLoss()
     
     if freeze:
         if "resnet" in architecture:
@@ -198,6 +202,8 @@ if __name__ == "__main__":
                         help='Directory to save the models to')
     parser.add_argument('--freeze', action='store_true', default=False, 
                         help='Whether to only train the last layer or not.')
+    parser.add_argument('--loss', type=str, default='cross_entropy',
+                       help= 'Cross entropy or Focal loss')
     
     
     args = parser.parse_args()
