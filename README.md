@@ -43,7 +43,15 @@ The current idea for the structure is to have something like this :
 data
 ├── all-synthetic-runs
 │   ├── run1
+│   │   ├── img0.jpg
+│   │   ├── img1.jpg
+│   │   ├── img2.jpg
+│   │   └── metadata.json
 │   └── run2
+│       ├── img0.jpg
+│       ├── img1.jpg
+│       ├── img2.jpg
+│       └── metadata.json
 ├── archives
 │   ├── embryo_dataset_annotations.tar.gz
 │   ├── embryo_dataset_F-15.tar.gz
@@ -55,22 +63,52 @@ data
 │   ├── embryo_dataset_grades.csv
 │   ├── embryo_dataset.tar.gz
 │   └── embryo_dataset_time_elapsed.tar.gz
-└── extracted
-    ├── embryo_dataset
-    ├── embryo_dataset_annotations
-    ├── embryo_dataset_F-15
-    ├── embryo_dataset_F15
-    ├── embryo_dataset_F-30
-    ├── embryo_dataset_F30
-    ├── embryo_dataset_F-45
-    ├── embryo_dataset_F45
-    ├── embryo_dataset_grades.csv
-    └── embryo_dataset_time_elapsed
+├── extracted
+│   ├── embryo_dataset
+│   ├── embryo_dataset_annotations
+│   ├── embryo_dataset_F-15
+│   ├── embryo_dataset_F15
+│   ├── embryo_dataset_F-30
+│   ├── embryo_dataset_F30
+│   ├── embryo_dataset_F-45
+│   ├── embryo_dataset_F45
+│   ├── embryo_dataset_grades.csv
+│   └── embryo_dataset_time_elapsed
+└── image-folders
+    └── training-one-per-phase-per-vid
+        ├── description
+        │   ├── img0.txt
+        │   └── img1.txt
+        ├── images
+        │   ├── img0.jpg
+        │   └── img1.jpg
+        └── metadata.csv
 ```
 
 Initially, `data/extracted` should either : (a) be empty, or (b) not exist at all. On the other hand, `data/archives` should have the exact content that is listed above. If one archive is missing, or any other file or directory is found in this directory, an error will be returned before anything is extracted. Likewise, if `data/extracted` exists and is not empty, no archive will be extracted and an error message will be returned.
 
-The directory `all-synthetic-runs` is where synthetic dataset will be t
+The directory `all-synthetic-runs` is where synthetic dataset will be after inference. All images in a run have been generated with the same prompt, with the same model, and everything. These information are stored inside the `metadata.json` file, with this structure :
+
+```json
+{
+    "datetime": "2023-09-11T11:56:51.976986",
+    "prompt": "a microscopic image of human embryo at phase t7 recorded at focal plane F+00",
+    "phase": "t7",
+    "focal-plane": "F+00",
+}
+```
+
+The directory `images-folders` contains different image folders that can be generated to train stable diffusion easily. The `metadata.csv` file has this structure :
+
+```csv
+filename,label
+0.jpeg,F+00_DML271-2_51
+1.jpeg,F+00_LEG557-3_162
+2.jpeg,F+00_LT1112-5_189
+3.jpeg,F+00_BF924-3_243
+4.jpeg,F+00_DI358-3_14
+5.jpeg,F+00_GF667-1-1_184
+```
 
 ### `extract_dataset.py`
 
