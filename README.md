@@ -101,13 +101,17 @@ The directory `all-synthetic-runs` is where synthetic dataset will be after infe
 The directory `images-folders` contains different image folders that can be generated to train stable diffusion easily. The `metadata.csv` file has this structure :
 
 ```csv
-filename,label
-0.jpeg,F+00_DML271-2_51
-1.jpeg,F+00_LEG557-3_162
-2.jpeg,F+00_LT1112-5_189
-3.jpeg,F+00_BF924-3_243
-4.jpeg,F+00_DI358-3_14
-5.jpeg,F+00_GF667-1-1_184
+filename,label,phase
+0.jpeg,F+00_BM016-5_146,t2
+1.jpeg,F+00_BJ492-8_127,t3
+2.jpeg,F+00_PC809-7_106,t2
+3.jpeg,F+00_MM84-8_164,t2
+4.jpeg,F+00_MM445-2-9_135,t2
+5.jpeg,F+00_GS811-3_193,t3
+6.jpeg,F+00_OJ319-7_126,t2
+7.jpeg,F+00_CE525-2_146,t2
+8.jpeg,F+00_LV723-9_105,t2
+9.jpeg,F+00_PA214-5_150,t2
 ```
 
 ### `extract_dataset.py`
@@ -156,4 +160,32 @@ After a successful run, here is what /data/extract will look like :
 ├── embryo_dataset_F45
 ├── embryo_dataset_grades.csv
 └── embryo_dataset_time_elapsed
+```
+
+## `make_image_folder.py`
+
+This is how to generate the image folders.
+
+Here is the list of all **required** arguments :
+
+- dataset: this is the source of extracted videos.
+- split-file: this is the split.json file.
+- set: this is the set to use (must be either train, test, or eval).
+- phases: this is the list of phases to use. You may use `all` to specify all phases, all values must be space separated. If `all` is given, no other additional values may be given.
+- image-folder-parent: this is where the image folder will be created
+
+And here is the list of **optional** arguments :
+
+- image-folder-name: a name for the image folder (recommended), otherwise a new random name will be used.
+- `--shuffle` or `--no-shuffle` to shuffle or not the dataset, the default is to shuffle.
+- seed: the seed for the PRG to shuffle the images.
+
+Here are two examples :
+
+```sh
+python make_image_folder.py --dataset /App/data/extracted/ --split-file split.json --set eval --phases t6 t7 t8 --image-folder-parent /App/data/image-folders --image-folder-name v6-8-det-s-0 --shuffle --seed 0
+```
+
+```sh
+python make_image_folder.py --dataset /App/data/extracted/ --split-file split.json --set eval --phases all --image-folder-parent /App/data/image-folders
 ```
