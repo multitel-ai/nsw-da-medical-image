@@ -11,7 +11,7 @@ __location__ = os.path.realpath(
 
 def main(model_id, n_iter, version, prompt):
 
-    output_folder = os.path.join(__location__,'generated_images',f"{version}")
+    output_folder = os.path.join(__location__,'all-synthetic-runs',f"{version}")
 
     os.makedirs(output_folder, exist_ok=True)
 
