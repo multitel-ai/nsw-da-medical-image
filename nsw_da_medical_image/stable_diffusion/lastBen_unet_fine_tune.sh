@@ -9,7 +9,7 @@ export INSTANCE_DIR="$instance_dir_name"
 export CLASS_DIR="path_to_class_images"
 #export CAPTIONS_DIR="./text_captions"
 export OUTPUT_DIR="./models/stable_diffusion/$model_version"
-export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen_$4"
+export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen"
 
 # Create OUTPUT_DIR if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
@@ -17,7 +17,8 @@ mkdir -p "$OUTPUT_DIR"
 # rm ./path_to_class_images/*
 # Run the Python code
 accelerate launch train_dreambooth_lastBen.py \
-  --wandb_project="$WANDB_PROJECT_NAME"\
+  --wandb_project="$WANDB_PROJECT_NAME" \
+  --wandb_run_name="$4" \
   --train_only_unet \
   --save_starting_step=500 \
   --class_data_dir="$CLASS_DIR" \

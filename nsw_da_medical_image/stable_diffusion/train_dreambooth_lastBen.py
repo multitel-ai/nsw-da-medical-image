@@ -399,7 +399,15 @@ def parse_args():
         type=str,
         default="",
         help="wandb project name",
+    )
+
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default="",
+        help="wandb project name",
     )   
+
 
 
     parser.add_argument(
@@ -845,17 +853,8 @@ def main():
         accelerator.init_trackers(args.wandb_project, config=tracker_config)
         wandb.init(
             project=args.wandb_project,
-            # config={
-            #     'instance_prompt':"Medical image with optical micropscope of a human embryo at a certain development stage",
-            #     'class_prompt':"Micropscopic image of a human embryo",
-            #     'Dataset size': len(train_dataset),
-            #     'Number of epochs':args.num_train_epochs,
-            #     'Total optimization steps': args.max_train_steps,
-            #     'Number of epochs': args.num_train_epochs,
-            #     'Batch size': total_batch_size,
-            #     'Loss function': 'mse_loss',
-            # }
-            config=tracker_config
+            config=tracker_config, 
+            name=args.wandb_run_name,
         )
 
     def bar(prg):
