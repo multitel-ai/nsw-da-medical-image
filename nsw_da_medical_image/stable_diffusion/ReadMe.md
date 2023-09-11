@@ -15,10 +15,6 @@ The finetuning can be be launched using ./lastBen_unet_fine_tune.sh $1 $2 $3 $4 
 6. $6 = specify path to save synthetic images
 7. $7 = number of images to be generated
 
-./lastBen_unet_fine_tune.sh './path_to_dataset_directory' 'a grayscale microscopic image of human embryo at phase tPB2' 3300 "phase-tPB2"  '/App/models/stable_diffusion/' '/App/data/synthetic-images/'
-
-./lastBen_unet_fine_tune.sh /App/data/extracted/train/images 'a grayscale microscopic image of human embryo at phase t2' 't2_text' /App/models/stable_diffusion/ /App/data/synthetic-images 15
-
 ./lastBen_unet_fine_tune.sh /App/data/extracted/train/images 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 3
 
 
