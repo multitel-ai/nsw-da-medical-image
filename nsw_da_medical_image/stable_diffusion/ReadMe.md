@@ -12,4 +12,4 @@ The finetuning can be be launched using ./lastBen_unet_fine_tune.sh $1 $2 $3 $4 
 3. $3 = 220 * number of images in $1
 4. $4 = username -> this creates a wandb project with your name using stable diffusion
 
-./lastBen_unet_fine_tune.sh './text_encoder_dataset' 'a grayscale microscopic image of human embryo at phase tPB2' 3300 "michael"
+./lastBen_unet_fine_tune.sh './path_to_dataset_directory' 'a grayscale microscopic image of human embryo at phase tPB2' 3300 "michael"
