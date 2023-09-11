@@ -8,7 +8,7 @@ export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
 export INSTANCE_DIR="$instance_dir_name"
 export CLASS_DIR="path_to_class_images"
 #export CAPTIONS_DIR="./text_captions"
-export OUTPUT_DIR="./models/stable_diffusion/$model_version"
+export OUTPUT_DIR="$5/$model_version"
 export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen"
 
 # Create OUTPUT_DIR if it doesn't exist
@@ -56,6 +56,7 @@ fi
 
 python test_diffusion.py \
   --m="$OUTPUT_DIR" \
-  --n=500 \
+  --n=$7 \
   --v="$model_version" \
-  --p="$instance_prompt"
+  --p="$instance_prompt" \
+  --o="$6"
