@@ -4,6 +4,7 @@ import random
 import typing
 import uuid
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -72,6 +73,67 @@ def _generate_on_indices(
                 txt_file.write(f"a microscopic image of human embryo at phase {phase_label} recorded at focal plane {plane_label}\n")
 
     return image_folder
+
+
+def make_image_folder_every_phase_vid(
+    extracted_path: pathlib.Path,
+    image_folder_parent: pathlib.Path,
+    image_folder_name: str | None,
+    videos: list[Video],
+    focal_planes: list[FocalPlane],
+    on_exist: typing.Literal["return", "raise"] = "raise",
+    shuffle: bool = True,
+    seed: int = 0,
+):
+    ""
+    image_folder = _prepare_folder(
+        image_folder_parent,
+        image_folder_name,
+        on_exist,
+    )
+
+    class _Item(typing.NamedTuple):
+        metadata_idx: int
+        frame_list_idx: int
+
+    dataset = NSWDataset(extracted_path, videos, focal_planes)
+
+    selected: list[_Item] = []
+    video_metadata_lst = dataset.videos_metadata
+    for idx, video_metadata in enumerate(video_metadata_lst):
+        frames: dict[Phase, list[int]] = collections.defaultdict(list)
+        phases_in_vid = video_metadata.phases.annotate_lst(video_metadata.frames)
+        for frame_idx, (frame, phase) in enumerate(
+            zip(video_metadata.frames, phases_in_vid)
+        ):
+            frames[phase].append(frame_idx)
+
+        # select the median frame for each phase
+        for phase, lst in frames.items():
+            median_frame = int(np.median(lst))
+            selected.append(_Item(idx, median_frame))
+
+    prg = random.Random(seed)
+    random_planes = prg.choices(focal_planes or list(FocalPlane), k=len(selected))
+    plane_idx = 0
+
+    selected_indices: list[int] = []
+    for item in selected:
+        plane = random_planes[plane_idx]
+        plane_idx += 1
+
+        # compute flat idx
+        flat_idx = dataset.flatten_idx(
+            dataset.planes.index(plane),
+            item.metadata_idx,
+            item.frame_list_idx,
+        )
+        selected_indices.append(flat_idx)
+
+    if shuffle:
+        prg.shuffle(selected_indices)
+
+    return _generate_on_indices(selected_indices, dataset, image_folder)
 
 
 def make_balanced_image_folder(
