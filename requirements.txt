@@ -6,3 +6,8 @@ scipy==1.11.2
 pillow==9.4
 scikit-learn==1.2
 matplotlib
+diffusers==0.20.2
+safetensors==0.3.3
+gradio==3.16.2
+xformers==0.0.21
+bitsandbytes==0.41.1
