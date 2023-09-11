@@ -35,20 +35,38 @@ def get_device():
         return torch.device('cpu')
 
 
-def run_train(num_epochs: int,
+def run_train(architecture: str,
+              num_epochs: int,
               lr: float,
               batch_size: int,
               weights: str,
               data_dir: str,
               wandb_project_name: str = None,
               wandb_run_name: str = None,
-              save_dir: str = '/App/models'):
+              save_dir: str = '/App/models',
+              freeze: bool = False):
     set_seed()
     device = get_device()
-    model = build_model(path=weights)
+    model = build_model(net=architecture, path=weights)
     model = model.to(device)
     loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(device))
-    optimizer = Adam(model.parameters(), lr=lr)
+    
+    if freeze:
+        if "resnet" in architecture:
+            last_layer_name = "fc" 
+            params = model.fc.parameters()
+        elif "densenet" in architecture:
+            last_layer_name = "classifier"
+            params = model.classifier.parameters()
+        else:
+            raise Exception(f"Architecture not recognized: '{architecture}'")
+        for name, param in model.named_parameters():
+            if last_layer_name not in name:
+                param.requires_grad = False
+    else:
+        params = model.parameters()
+    
+    optimizer = Adam(params, lr=lr)
     
     now = datetime.now()
     formatted_string = now.strftime("%d-%m_%Hh%M")
@@ -60,14 +78,13 @@ def run_train(num_epochs: int,
     tr_loader = get_dataloader(data_dir, "train", batch_size, args.json_file)
     val_loader = get_dataloader(data_dir, "val", batch_size, args.json_file)
     
-    #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=num_epochs)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=len(tr_loader)*1)
+    train_dataset_length = len(tr_loader)
+    
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs*train_dataset_length)
     
     wandb.login()
     wandb.init(project=wandb_project_name, mode="online", name=wandb_run_name, 
             entity='trail23-medical-image-diffusion')
-    
-    train_dataset_length = len(tr_loader)
 
     for epoch in range(num_epochs):
         epoch_loss = 0.0
@@ -92,7 +109,7 @@ def run_train(num_epochs: int,
             epoch_loss += loss_pred.item()
             optimizer.step()
             
-            lr_scheduler.step(epoch + tidx / train_dataset_length)  
+            lr_scheduler.step()
 
             current_lr = optimizer.param_groups[0]["lr"]
             if step % 100 == 0:
@@ -129,7 +146,6 @@ def run_train(num_epochs: int,
                 epoch_loss_val += loss(labels_pred, labels).mean().item()
 
             acc /= (vidx+1)
-            
             epoch_loss_val /= len(val_loader)
             
             print(f"Accuracy after this epoch: {round(acc,4)}")
@@ -143,13 +159,15 @@ def run_train(num_epochs: int,
                 step=(epoch*train_dataset_length)+tidx)
 
 def main(args):
-    run_train(num_epochs=args.num_epochs,
+    run_train(architecture=args.architecture,
+              num_epochs=args.num_epochs,
               lr=args.lr, 
               batch_size=args.batch_size,
               weights=args.pretrained_weights, 
               data_dir=args.data_dir,
               wandb_project_name=args.wandb_project, 
-              wandb_run_name=args.name)
+              wandb_run_name=args.name,
+              freeze=args.freeze)
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -177,6 +195,9 @@ if __name__ == "__main__":
                         help='wandb run name')
     parser.add_argument('--save_dir', type=str, default='/App/models', 
                         help='Directory to save the models to')
+    parser.add_argument('--freeze', action='store_true', default=False, 
+                        help='Whether to only train the last layer or not.')
+    
     
     args = parser.parse_args()
     
