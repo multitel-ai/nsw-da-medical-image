@@ -1,5 +1,7 @@
 import pandas as pd
 from sklearn.metrics import confusion_matrix,roc_auc_score,precision_recall_curve,auc
+from pathlib import Path
+import numpy as np
 
 
 def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes=16):
@@ -36,7 +38,11 @@ def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes=16)
         FP_c = norm_conf_mat[:, i].sum() - TP_c
         FN_c = norm_conf_mat[i, :].sum() - TP_c
         
-        prec_class.append(TP_c/(TP_c + FP_c))
+        if TP_c + FP_c <= 0:
+            prec_class.append(np.nan)
+        else:
+            prec_class.append(TP_c/(TP_c + FP_c))
+    
         rec_class.append(TP_c / (TP_c + FN_c))
         f1_score_class.append(TP_c / (TP_c + 0.5 * FP_c + 0.5 * FN_c))
     
@@ -51,11 +57,39 @@ def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes=16)
 
 
 def main(args):
-    calculate_metrics(
+    results = calculate_metrics(
       gt_csv=args.gt,
       pred_labels_csv=args.pred_labels,
       prob_pred_labels_csv=args.pred_prob, 
-      n_classes=args.n_classes)
+      n_classes=args.n_classes
+    )
+    
+    out_path = Path(args.pred_labels).parent 
+    # Call the calculate_metrics function and capture its output
+    conf_mat, norm_conf_mat, acc_balanced, prec_class, rec_class, f1_score_class, roc_auc_class, pr_auc_class = results
+    
+    # Save confusion matrix
+    pd.DataFrame(conf_mat).to_csv(out_path / 'conf_mat.csv', index=False)
+    
+    # Save normalized confusion matrix
+    pd.DataFrame(norm_conf_mat).to_csv(out_path / 'norm_conf_mat.csv', index=False)
+    
+    # Save class-wise metrics into a single CSV
+    class_metrics_df = pd.DataFrame({
+        'Precision': prec_class,
+        'Recall': rec_class,
+        'F1_Score': f1_score_class,
+        'PR_AUC': pr_auc_class,
+        'ROC_AUC': roc_auc_class
+    })
+    class_metrics_df.to_csv(out_path / 'class_metrics.csv', index=False)
+    
+    # Save other metrics
+    other_metrics_df = pd.DataFrame({
+        'Balanced_Accuracy': [acc_balanced],
+    })
+    other_metrics_df.to_csv(out_path / 'other_metrics.csv', index=False)
+    
 
 if __name__ == "__main__":
     import argparse
