@@ -49,7 +49,7 @@ def run_train(architecture: str,
     device = get_device()
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
-    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(device))
+    loss = nn.CrossEntropyLoss()
     
     if freeze:
         if "resnet" in architecture:

@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import nsw_da_medical_image.dataset_util as du
+import numpy as np
 
 def video_from_dir(dir: str) -> du.Video:
     for vid in du.Video:
@@ -14,28 +15,27 @@ def video_from_dir(dir: str) -> du.Video:
             return vid
     raise ValueError("Video directory not found.")
 
-def get_weights(data_dir: str, json_file: str) -> torch.Tensor:
-    kfold = json.load(open(json_file))
-    videos = list(kfold["train"])
-    class_dict: Dict[str, int] = {}
 
-    for video in videos:
-        info_video = pd.read_csv(f"{data_dir}embryo_dataset_annotations/{video}_phases.csv", header=None)
-        classes = info_video[0].tolist()
-        n_classes = (info_video[2] - info_video[1] + 1).tolist()
-        count_classes_dict = dict(zip(classes, n_classes))
+def get_weights_per_image(base_path:str,videos:list,data_aug:list):
+        
+    data_set = du.NSWDataset(
+        base_path,
+        videos=[video_from_dir(video) for video in videos],
+        planes=[du.FocalPlane.F_0],
+        transform=data_aug)
+          
+    phases =[phase.idx() for phase in data_set.all_phases()]
+    classes, count_classes = np.unique(phases, return_counts=True)
 
-        for cl, n_cl in count_classes_dict.items():
-            class_dict[cl] = class_dict.get(cl, 0) + n_cl
+    weight_per_class = {}                                    
+    N = count_classes.sum()
 
-    weight_per_class: List[float] = []
-    N = float(sum(class_dict.values()))
+    for i in range(len(classes)):
+        weight_per_class[classes[i]] = N/float(count_classes[i])
+    
+    weights_per_image = [weight_per_class[phase] for phase in phases]
 
-    for i in range(len(class_dict)):
-        cl = du.Phase.from_idx(i).label
-        weight_per_class.append(N / float(class_dict[cl]))
-
-    return torch.tensor(weight_per_class)
+    return torch.utils.data.sampler.WeightedRandomSampler(weights_per_image, len(weights_per_image)), data_set
 
 def get_test_transforms(resize: Tuple[int, int] = (256, 256)) -> transforms.Compose:
     return transforms.Compose([transforms.Resize(resize), transforms.Grayscale(num_output_channels=3), transforms.ToTensor()])
@@ -60,18 +60,19 @@ def get_dataloader(
             transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor()
         ])
-        shuffle = True
+        sampler, data_set = get_weights_per_image(base_path,files,data_aug)
+
     else:
         data_aug = get_test_transforms()
-        shuffle = False
+        sampler = None
+        data_set = du.NSWDataset(
+            base_path,
+            videos=[video_from_dir(file) for file in files],
+            planes=[du.FocalPlane.F_0],
+            transform=data_aug
+        )
+    
 
-    data_set = du.NSWDataset(
-        base_path,
-        videos=[video_from_dir(file) for file in files],
-        planes=[du.FocalPlane.F_0],
-        transform=data_aug
-    )
-
-    return DataLoader(data_set, batch_size, shuffle=shuffle)
+    return DataLoader(data_set, batch_size, sampler = sampler)
 
 
