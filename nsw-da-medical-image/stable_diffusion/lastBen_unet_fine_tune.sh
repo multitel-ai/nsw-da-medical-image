@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Set environment variables
-model_version='unet_finetune_v1_0'
-instance_dir_name='./text_encoder_dataset'
-instance_prompt='a microscopic image of human embryo at phase tPB2'
+model_version='unet_finetune_v1_1'
+instance_dir_name="$1"
+instance_prompt="$2"
 export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
 export INSTANCE_DIR="$instance_dir_name"
 export CLASS_DIR="path_to_class_images"
 #export CAPTIONS_DIR="./text_captions"
 export OUTPUT_DIR="./models/$model_version"
-export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen_$1"
+export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen_$4"
 
 # Create OUTPUT_DIR if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
@@ -34,7 +34,7 @@ accelerate launch train_dreambooth_lastBen.py \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
   --num_class_images=200 \
-  --max_train_steps=3300 \
+  --max_train_steps=$3\
   --num_validation_images=5 \
   --validation_steps=100 \
   --validation_prompt="$instance_prompt"
