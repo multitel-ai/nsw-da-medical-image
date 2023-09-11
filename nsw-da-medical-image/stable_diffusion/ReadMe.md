@@ -11,3 +11,5 @@
 ## Create the following directories
 1. generated_images -> The generated images would be stored here!
 2. models -> This is where the pretrained model wil be saved
+
+## Once all is done run launch_finetuning.sh
