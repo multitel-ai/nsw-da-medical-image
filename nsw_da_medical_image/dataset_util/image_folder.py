@@ -7,7 +7,7 @@ import uuid
 import torch
 from PIL import Image
 
-from .dataset import NSWDataset
+from .dataset import NSWDataset, label_single
 from .enums import FocalPlane, Phase, Video
 
 
@@ -55,18 +55,21 @@ def _generate_on_indices(
 
     dataset.transform = save_image
 
-    for idx in indices:
-        img_path = next_path()
-        txt_path = img_path.with_suffix(".txt")
+    with open(image_folder / "metadata.csv", "w", encoding="utf8") as metadata_csv:
+        metadata_csv.write("filename,label\n")
+        for idx in indices:
+            img_path = next_path()
+            txt_path = img_path.with_suffix(".txt")
 
-        data_item = dataset[idx]  # transform saves the copy
+            data_item = dataset[idx]  # transform saves the copy
+            metadata_csv.write(f"{img_path.name},{label_single(data_item)}\n")
 
-        phase_idx = data_item.phase
-        phase_label = Phase.from_idx(phase_idx).label
-        plane_label = FocalPlane.from_idx(data_item.plane).pretty
+            phase_idx = data_item.phase
+            phase_label = Phase.from_idx(phase_idx).label
+            plane_label = FocalPlane.from_idx(data_item.plane).pretty
 
-        with open(txt_path, "w", encoding="utf8") as txt_file:
-            txt_file.write(f"a microscopic image of human embryo at phase {phase_label} recorded at focal plane {plane_label}")
+            with open(txt_path, "w", encoding="utf8") as txt_file:
+                txt_file.write(f"a microscopic image of human embryo at phase {phase_label} recorded at focal plane {plane_label}\n")
 
     return image_folder
 
