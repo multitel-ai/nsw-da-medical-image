@@ -12,7 +12,7 @@ import argparse
 from nsw_da_medical_image.dataset_util import dataset
 import nsw_da_medical_image.dataset_util as du
 from nsw_da_medical_image.classifier.model import build_model
-from nsw_da_medical_image.classifier.utils import get_dataloader, get_weights
+from nsw_da_medical_image.classifier.utils import get_dataloader
 
 # Ensuring Reproducibility
 def set_seed():

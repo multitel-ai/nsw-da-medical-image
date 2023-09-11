@@ -16,7 +16,7 @@ def video_from_dir(dir: str) -> du.Video:
     raise ValueError("Video directory not found.")
 
 
-def get_weights_per_image(base_path:str,videos:list,data_aug:list):
+def get_weights_per_image(base_path,videos,data_aug):
         
     data_set = du.NSWDataset(
         base_path,
