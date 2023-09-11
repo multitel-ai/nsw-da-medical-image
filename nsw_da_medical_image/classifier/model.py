@@ -2,6 +2,7 @@ import os
 from torchvision.models import densenet121, resnet50
 from torch import nn, load as tload
 from torch.nn.modules.module import Module
+import torch 
 
 def build_model(net: str = 'resnet50', path: str = None) -> Module:
     """
@@ -25,7 +26,8 @@ def build_model(net: str = 'resnet50', path: str = None) -> Module:
         model = model_class(weights=weights)
     elif path:
         model = model_class(num_classes=16)
-        model.load_state_dict(tload(path))
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.load_state_dict(tload(path,map_location=device))
     else: 
         model = model_class(num_classes=16)
         model = _initialize_weights(model)
