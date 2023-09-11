@@ -1,4 +1,5 @@
 import bisect
+import itertools
 import operator
 import pathlib
 import PIL.Image as Image
@@ -212,6 +213,13 @@ class NSWDataset(Dataset[DataItem]):
             video=video.idx(),
             frame_number=frame,
         )
+
+    def all_phases(self) -> list[Phase]:
+        "a list of all phases of this dataset with the same order as the items"
+        def _annotate(vid_metadata: VideoMetadata):
+            return vid_metadata.phases.annotate_lst(vid_metadata.frames)
+        return list(itertools.chain.from_iterable(map(_annotate, self.videos_metadata)))
+
 
 
 def __label(plane: int, video: int, frame: int):
