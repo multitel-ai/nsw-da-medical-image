@@ -11,9 +11,10 @@ services:
     restart: unless-stopped
 
     volumes:
-      - .:/App
+      - .:/App/code
       - ./data:/App/data
-      - ./checkpoints:/App/checkpoints
+      - ./checkpoints:/App/models
+      - ./results:/App/results
 
     entrypoint: tail -f /dev/null
     environment:
