@@ -55,6 +55,9 @@ def compare_metrics(directories, output_dir):
     
     # 3. Bar plot for class-wise Precision
     fig, axs = plt.subplots(1, len(directories), figsize=(15, 6), sharey=True)
+    if len(directories) == 1:
+        axs = [axs]
+
     for idx, model in enumerate(directories):
         axs[idx].bar(range(len(all_metrics[model]['class_metrics']['Precision'])), 
                      all_metrics[model]['class_metrics']['Precision'], 
@@ -70,6 +73,9 @@ def compare_metrics(directories, output_dir):
     
     # 4. Bar plot for class-wise Recall
     fig, axs = plt.subplots(1, len(directories), figsize=(15, 6), sharey=True)
+    if len(directories) == 1:
+        axs = [axs]
+        
     for idx, model in enumerate(directories):
         axs[idx].bar(range(len(all_metrics[model]['class_metrics']['Recall'])), 
                      all_metrics[model]['class_metrics']['Recall'], 
