@@ -40,7 +40,7 @@ def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes=16)
         rec_class.append(TP_c / (TP_c + FN_c))
         f1_score_class.append(TP_c / (TP_c + 0.5 * FP_c + 0.5 * FN_c))
     
-        true_labels_cl = [i if (label == i) else 0 for label in true_labels]
+        true_labels_cl = [1 if (label == i) else 0 for label in true_labels]
         prob_pred_labels_cl = [prob_pred_label[i] for prob_pred_label in prob_pred_labels]
         prec_cl, rec_cl, _ = precision_recall_curve(true_labels_cl,prob_pred_labels_cl)
         pr_auc_class.append(auc(rec_cl, prec_cl))
