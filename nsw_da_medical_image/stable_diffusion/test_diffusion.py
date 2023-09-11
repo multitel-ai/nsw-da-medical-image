@@ -9,9 +9,9 @@ __location__ = os.path.realpath(
 
 
 
-def main(model_id, n_iter, version, prompt):
+def main(model_id, n_iter, version, prompt, output_dir):
 
-    output_folder = os.path.join(__location__,'all-synthetic-runs',f"{version}")
+    output_folder = os.path.join(output_dir,f"{version}")
 
     os.makedirs(output_folder, exist_ok=True)
 
@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument("--n", help="Num iterrations", default = 3)
     parser.add_argument("--v", help="Model version", default = "v1_1")
     parser.add_argument("--p", help="Custom Prompt", default = "Medical image with optical microscope of a human embryo at development stage t2")
+    parser.add_argument('--o', help='path to where synthetic images would be saved')
 
     
     args=parser.parse_args()
@@ -55,5 +56,6 @@ if __name__ == '__main__':
     m_version = args.v
     n = int(args.n)
     p = args.p
+    o = args.o
 
-    main(model_id=model, n_iter=n, version=m_version, prompt=p)
+    main(model_id=model, n_iter=n, version=m_version, prompt=p, output_dir=o)
