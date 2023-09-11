@@ -3,9 +3,8 @@ import pathlib
 import random
 import typing
 
-import pandas as pd
-
-from nsw_da_medical_image.dataset_util import Phase, Video
+from .enums import Phase, Video
+from .dataset import VideoPhases
 
 
 def random_split(videos: list[Video], weights: typing.Iterable[float], prg: random.Random):
@@ -86,20 +85,8 @@ def count_phases_in_videos(base_path: pathlib.Path, videos: list[Video] | None =
 
     phase_counter: dict[Video, dict[Phase, int]] = {}
     for video in videos:
-        df_path = (
-            base_path / "embryo_dataset_annotations" / f"{video.directory}_phases.csv"
-        )
-        df = pd.read_csv(df_path, index_col=None, header=None)
-
-        # count frames for each phases
-        phases: list[str] = df[0].to_list()
-        frame_counts: list[int] = (df[2] - df[1] + 1).tolist()
-
-        map_per_vid = {Phase(p): count for p, count in zip(phases, frame_counts)}
-        for phase in Phase:
-            if phase not in map_per_vid:
-                map_per_vid[phase] = 0
-        phase_counter[video] = map_per_vid
+        vid_phases = VideoPhases.read(base_path, video)
+        phase_counter[video] = vid_phases.count_phases()
     return phase_counter
 
 
