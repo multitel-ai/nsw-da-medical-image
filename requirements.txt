@@ -10,3 +10,4 @@ diffusers
 accelerate
 scipy
 safetensors
+
