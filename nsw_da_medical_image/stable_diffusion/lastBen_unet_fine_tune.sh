@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set environment variables
-model_version='unet_finetune_v1_1'
+model_version="$4"
 instance_dir_name="$1"
 instance_prompt="$2"
 export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
