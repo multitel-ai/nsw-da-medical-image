@@ -76,7 +76,7 @@ data
 │   └── embryo_dataset_time_elapsed
 └── image-folders
     └── training-one-per-phase-per-vid
-        ├── description
+        ├── descriptions
         │   ├── img0.txt
         │   └── img1.txt
         ├── images

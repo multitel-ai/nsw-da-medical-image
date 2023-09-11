@@ -12,6 +12,10 @@ from .dataset import NSWDataset, label_single
 from .enums import FocalPlane, Phase, Video
 
 
+_IMAGES = "images"
+_DESCRIPTION = "descriptions"
+
+
 def _prepare_folder(
     image_folder_parent: pathlib.Path,
     image_folder_name: str | None,
@@ -32,6 +36,8 @@ def _prepare_folder(
             else:
                 raise ValueError(f"{on_exist=!r} has an invalid value")
     image_folder.mkdir()
+    (image_folder / _IMAGES).mkdir()
+    (image_folder / _DESCRIPTION).mkdir()
     return image_folder
 
 
@@ -43,13 +49,16 @@ def _generate_on_indices(
     _placeholder = torch.empty(())
     next_idx = 0
 
-    def next_path() -> pathlib.Path:
-        return image_folder / f"{next_idx}.jpeg"
+    def next_path():
+        image = image_folder / _IMAGES / f"{next_idx}.jpeg"
+        description = image_folder / _DESCRIPTION / f"{next_idx}.txt"
+        return image, description
 
     def save_image(img: Image.Image) -> torch.Tensor:
         nonlocal next_idx
 
-        img.save(next_path())
+        image_path, _ = next_path()
+        img.save(image_path)
         next_idx = next_idx + 1
 
         return _placeholder  # just here for the correct typing
@@ -59,8 +68,7 @@ def _generate_on_indices(
     with open(image_folder / "metadata.csv", "w", encoding="utf8") as metadata_csv:
         metadata_csv.write("filename,label\n")
         for idx in indices:
-            img_path = next_path()
-            txt_path = img_path.with_suffix(".txt")
+            img_path, txt_path = next_path()
 
             data_item = dataset[idx]  # transform saves the copy
             metadata_csv.write(f"{img_path.name},{label_single(data_item)}\n")
