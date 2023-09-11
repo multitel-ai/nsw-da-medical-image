@@ -80,8 +80,8 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
             metadata = json.load(f)
 
         focal_plane = metadata["focal_plane"]
-        labels = LABELS_LIST.index(metadata["phase"])
-        labels = np.array([labels]*len(found_images)).astype("int")
+        label = LABELS_LIST.index(metadata["phase"])
+        labels = np.array([label]*len(found_images)).astype("int")
         
     else:
         
@@ -123,11 +123,12 @@ def getitem(idx,img_list,transform,labels):
 
 class OrigImageFolder():
     
-    def __init__(self,root,transform,orig_annot_folder,split_file_path,debug=False):
+    def __init__(self,root,transform,orig_annot_folder,split_file_path,dataset_label,max_size=None,debug=False):
 
         self.root = root
         self.transform = transform
-        
+        self.dataset_label = dataset_label
+
         #Load the json file 
         with open(split_file_path) as f:
             split_dic = json.load(f)    
@@ -143,9 +144,17 @@ class OrigImageFolder():
                 labels = np.concatenate((labels,labels_fold),axis=0)
             
         self.labels = labels
-        self.img_list = found_images
+        self.img_list = np.array(found_images)
+
+        label_mask = self.labels == dataset_label
+        self.img_list = self.img_list[label_mask]
+        self.labels = self.labels[label_mask]
+        
+        if max_size is not None and len(self.img_list) > max_size:
+            self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
 
         assert len(self.labels) == len(self.img_list)
+        print("Using",len(self.labels),"original images from label",dataset_label)
 
         if debug:
             with open("img_and_labels_orig.txt","w") as f:
@@ -160,7 +169,7 @@ class OrigImageFolder():
 
 class SynthImageFolder():
 
-    def __init__(self,root,transform,max_size=None,debug=False):
+    def __init__(self,root,transform,debug=False):
 
         self.root = root
         self.transform = transform
@@ -168,18 +177,18 @@ class SynthImageFolder():
         found_images = []
         labels = np.array([])
         folds = glob.glob(os.path.join(root,"*/"))
-        for fold in folds:
-            found_image_fold,_,labels_fold = get_imgs(fold,False)
-            found_images += found_image_fold
-            labels = np.concatenate((labels,labels_fold),axis=0)
+        #for fold in folds:
+        found_images,_,labels = get_imgs(root,False)
+
+        #Labels contains the same value repeated as many times as there are images
+        #In a synthetic dataset, all images have the same label
+        self.dataset_label = labels[0]
 
         self.labels = labels
         self.img_list = found_images
 
-        if max_size is not None:
-            self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
-
         assert len(self.labels) == len(self.img_list)
+        print("Using",len(self.labels),"synthetic images from label",self.dataset_label)
 
         if debug:
             with open("img_and_labels_synth.txt","w") as f:
@@ -188,6 +197,9 @@ class SynthImageFolder():
 
     def __len__(self):
         return len(self.img_list)
+
+    def get_label(self):
+        return self.dataset_label
 
     def __getitem__(self,idx):
         return getitem(idx,self.img_list,self.transform,self.labels)
@@ -313,8 +325,9 @@ def main():
 
     stat_dic = {}
 
-    synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),max_size=args.max_dataset_size,debug=args.debug)
-    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,debug=args.debug)
+    synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
+    dataset_label = synth_dataset.get_label()
+    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,dataset_label=dataset_label,max_size=args.max_dataset_size,debug=args.debug)
 
     for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[args.orig_data_path,args.synth_data_path]):
 
@@ -384,10 +397,10 @@ def main():
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
         with open(csv_path,"w") as f:
-            f.write("model_name,orig_data,synth_data,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
+            f.write("model_name,orig_data,synth_data,label,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
 
     with open(csv_path,"a") as f:
-        f.write(f"{model_name},{orig_dataset},{synth_dataset},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
+        f.write(f"{model_name},{orig_dataset},{synth_dataset},{dataset_label},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
 
 if __name__ == "__main__":
     main()
