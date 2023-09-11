@@ -13,6 +13,7 @@ def inference(
         data_path: str,
         out_path: str,
         split: str = "val",
+        architecture: str = 'resnet50',
         model_path: str | None = None,
         batch_size: int = 32,
         json_file: str = "/App/code/split.json"
@@ -34,7 +35,7 @@ def inference(
     model_name = model_path.stem
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = build_model(net='densenet121',path=model_path).to(device)
+    model = build_model(net=architecture,path=model_path).to(device)
     model.eval()
 
     prob_df = pd.DataFrame(columns=['id'] + [f'class_prob_{i}' for i in range(16)])
@@ -70,7 +71,6 @@ def inference(
 
         torch.cuda.empty_cache()
         del img, batch_predictions
-        break
 
     prob_df = pd.concat([prob_df, pd.DataFrame(prob_preds)], ignore_index=True)
     class_df = pd.concat([class_df, pd.DataFrame(class_preds)], ignore_index=True)
@@ -83,6 +83,7 @@ def main(args: argparse.Namespace) -> None:
         args.data_path,
         args.out_path,
         args.split,
+        args.architecture,
         args.model_path,
         args.batch_size,
         args.json_file
@@ -94,9 +95,10 @@ if __name__ == '__main__':
         description="Run inference on a model and output results to CSV files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    
     parser.add_argument("--data_path", type=str, help="Path to the data.")
     parser.add_argument("--out_path", type=str, help="Path to output directory.")
+    parser.add_argument("--architecture", type=str, default='resnet50', help="Model architecture. Either 'densenet121' or 'resnet50'")
     parser.add_argument("--model_path", type=str, help="Path to the trained model weights.")
     parser.add_argument("--split", type=str, default="val", help="Which data split (test, val).")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for the dataloader.")

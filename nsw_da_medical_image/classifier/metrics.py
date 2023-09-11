@@ -1,15 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Sep  8 12:01:03 2023
-
-@author: Laura
-"""
-
 import pandas as pd
 from sklearn.metrics import confusion_matrix,roc_auc_score,precision_recall_curve,auc
 
 
-def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes):
+def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes=16):
     pred_labels = []
     true_labels= []
     prob_pred_labels = []
@@ -55,4 +48,27 @@ def calculate_metrics(gt_csv,pred_labels_csv,prob_pred_labels_csv, n_classes):
     roc_auc_class = roc_auc_score(true_labels, prob_pred_labels, average = None, multi_class = 'ovr')
     
     return conf_mat, norm_conf_mat, acc_balanced, prec_class, rec_class, f1_score_class,roc_auc_class,pr_auc_class
+
+
+def main(args):
+    calculate_metrics(
+      gt_csv=args.gt,
+      pred_labels_csv=args.pred_labels,
+      prob_pred_labels_csv=args.pred_prob, 
+      n_classes=args.n_classes)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Computes metrics based on the results infered and stored in CSV files.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument("--gt", type=str, help="Path to ground truth CSV.")
+    parser.add_argument("--pred_labels", type=str, help="Path to predicted labels CSV.")
+    parser.add_argument("--pred_prob", type=str, help="Path to predicted probabilities CSV.")
+    parser.add_argument("--n_classes", type=int, default=16, help="Number of classes.")
+
+    args = parser.parse_args()
+    main(args)
 
