@@ -1,7 +1,7 @@
 # Temporary ReadMe to Launch FineTuning Unet of Stable Diffusion
 
 ## Create the following directories
-1. generated_images -> The generated images would be stored here!
+1. all-synthetic-runs -> The generated images would be stored here!
 2. models -> This is where the pretrained model wil be saved
 *These directories are to be created in the same directory as lastBen_unet_fine_tune.sh*
 
