@@ -13,6 +13,7 @@ from nsw_da_medical_image.dataset_util import dataset
 import nsw_da_medical_image.dataset_util as du
 from nsw_da_medical_image.classifier.model import build_model
 from nsw_da_medical_image.classifier.utils import get_dataloader
+from nsw_da_medical_image.classifier.loss import FocalLoss
 
 # Ensuring Reproducibility
 def set_seed():
@@ -49,7 +50,7 @@ def run_train(architecture: str,
     device = get_device()
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
-    loss = nn.CrossEntropyLoss()
+    loss = FocalLoss()#nn.CrossEntropyLoss()
     
     if freeze:
         if "resnet" in architecture:
