@@ -20,7 +20,7 @@ accelerate launch train_dreambooth_lastBen.py \
   --wandb_project="$WANDB_PROJECT_NAME" \
   --wandb_run_name="$4" \
   --train_only_unet \
-  --save_starting_step=500 \
+  --save_starting_step=10000 \
   --class_data_dir="$CLASS_DIR" \
   --pretrained_model_name_or_path="$MODEL_NAME" \
   --instance_data_dir="$INSTANCE_DIR" \
@@ -37,7 +37,7 @@ accelerate launch train_dreambooth_lastBen.py \
   --num_class_images=200 \
   --max_train_steps=$3\
   --num_validation_images=5 \
-  --validation_steps=100 \
+  --validation_steps=5000 \
   --validation_prompt="$instance_prompt"
 
     
