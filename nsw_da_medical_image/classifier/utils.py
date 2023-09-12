@@ -88,7 +88,6 @@ def get_dataloader(
                 transform=data_aug
             )
         else:
-            print("image weights")
             sampler, data_set = get_weights_per_image(base_path,files,data_aug)
             shuffle = False
     else:

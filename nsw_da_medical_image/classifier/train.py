@@ -55,7 +55,6 @@ def run_train(architecture: str,
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
     if imbalance_weights=='class':
-        print("class weights")
         loss_weights = get_weights(data_dir,json_file,'train').to(device)
     else:
         loss_weights = None
