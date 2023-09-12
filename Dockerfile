@@ -12,3 +12,5 @@ RUN pip install -r /requirements.txt
 RUN pip install --upgrade diffusers[torch]
 
 WORKDIR /App
+
+ENV HOME=/App/code
