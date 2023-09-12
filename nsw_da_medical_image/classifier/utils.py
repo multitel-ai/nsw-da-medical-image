@@ -15,7 +15,29 @@ def video_from_dir(dir: str) -> du.Video:
             return vid
     raise ValueError("Video directory not found.")
 
+def get_weights(data_dir: str, json_file: str) -> torch.Tensor:
+    kfold = json.load(open(json_file))
+    videos = list(kfold["train"])
+    class_dict: Dict[str, int] = {}
 
+    for video in videos:
+        info_video = pd.read_csv(f"{data_dir}embryo_dataset_annotations/{video}_phases.csv", header=None)
+        classes = info_video[0].tolist()
+        n_classes = (info_video[2] - info_video[1] + 1).tolist()
+        count_classes_dict = dict(zip(classes, n_classes))
+
+        for cl, n_cl in count_classes_dict.items():
+            class_dict[cl] = class_dict.get(cl, 0) + n_cl
+    
+    weight_per_class: List[float] = []
+    N = float(sum(class_dict.values()))
+    
+    for i in range(len(class_dict)):
+        cl = du.Phase.from_idx(i).label
+        weight_per_class.append(N / float(class_dict[cl]))
+    
+    return torch.tensor(weight_per_class)
+           
 def get_weights_per_image(base_path,videos,data_aug):
         
     data_set = du.NSWDataset(
@@ -44,7 +66,8 @@ def get_dataloader(
     data_dir: str,
     mode: str,
     batch_size: int,
-    json_file: str
+    json_file: str,
+    sampler_weights:str = 'class',
 ) -> DataLoader:
     kfold = json.load(open(json_file))
     files = list(kfold[mode])
@@ -60,11 +83,23 @@ def get_dataloader(
             transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor()
         ])
-        sampler, data_set = get_weights_per_image(base_path,files,data_aug)
-
+        if sampler_weights == 'class':
+            sampler = None
+            shuffle = True
+            data_set = du.NSWDataset(
+                base_path,
+                videos=[video_from_dir(file) for file in files],
+                planes=[du.FocalPlane.F_0],
+                transform=data_aug
+            )
+        else:
+            print("image weights")
+            sampler, data_set = get_weights_per_image(base_path,files,data_aug)
+            shuffle = False
     else:
         data_aug = get_test_transforms()
         sampler = None
+        shuffle = False
         data_set = du.NSWDataset(
             base_path,
             videos=[video_from_dir(file) for file in files],
@@ -73,6 +108,6 @@ def get_dataloader(
         )
     
 
-    return DataLoader(data_set, batch_size, sampler = sampler)
+    return DataLoader(data_set, batch_size, sampler = sampler, shuffle = shuffle)
 
 

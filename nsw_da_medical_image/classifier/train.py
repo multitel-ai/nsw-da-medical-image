@@ -12,7 +12,7 @@ import argparse
 from nsw_da_medical_image.dataset_util import dataset
 import nsw_da_medical_image.dataset_util as du
 from nsw_da_medical_image.classifier.model import build_model
-from nsw_da_medical_image.classifier.utils import get_dataloader
+from nsw_da_medical_image.classifier.utils import get_dataloader,get_weights
 
 
 # Ensuring Reproducibility
@@ -40,8 +40,11 @@ def run_train(architecture: str,
               num_epochs: int,
               lr: float,
               batch_size: int,
+              loss: str,
+              json_file: str,
               weights: str,
               data_dir: str,
+              imbalance_weights:str,
               wandb_project_name: str = None,
               wandb_run_name: str = None,
               save_dir: str = '/App/models',
@@ -50,11 +53,16 @@ def run_train(architecture: str,
     device = get_device()
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
+    if imbalance_weights=='class':
+        print("class weights")
+        loss_weights = get_weights(data_dir,json_file).to(device)
+    else:
+        loss_weights = None
     if args.loss == 'cross_entropy':
-        loss = nn.CrossEntropyLoss()
+        loss = nn.CrossEntropyLoss(weight=loss_weights)
     else:
         from nsw_da_medical_image.classifier.loss import FocalLoss
-        loss = FocalLoss()
+        loss = FocalLoss(weight=loss_weights)
     
     if freeze:
         if "resnet" in architecture:
@@ -80,8 +88,8 @@ def run_train(architecture: str,
     os.makedirs(save_dir/"best")
     os.makedirs(save_dir/"checkpoint")
     
-    tr_loader = get_dataloader(data_dir, "train", batch_size, args.json_file)
-    val_loader = get_dataloader(data_dir, "val", batch_size, args.json_file)
+    tr_loader = get_dataloader(data_dir, "train", batch_size, json_file,imbalance_weights)
+    val_loader = get_dataloader(data_dir, "val", batch_size, json_file)
     
     train_dataset_length = len(tr_loader)
     
@@ -168,8 +176,11 @@ def main(args):
               num_epochs=args.num_epochs,
               lr=args.lr, 
               batch_size=args.batch_size,
+              loss = args.loss,
+              json_file = args.json_file,
               weights=args.pretrained_weights, 
               data_dir=args.data_dir,
+              imbalance_weights = args.imbalance_weights,
               wandb_project_name=args.wandb_project, 
               wandb_run_name=args.name,
               freeze=args.freeze)
@@ -182,11 +193,11 @@ if __name__ == "__main__":
             
     parser.add_argument('--architecture', type=str, default='resnet50',
                         help='Model architecture')
-    parser.add_argument('--batch_size', type=int, default=16,
+    parser.add_argument('--batch_size', type=int, default=32,
                         help='batch size')
     parser.add_argument('--num_epochs', type=int, default=50,
                         help='Max number of epochs')
-    parser.add_argument('--lr', type=float, default=0.001,
+    parser.add_argument('--lr', type=float, default=0.00001,
                         help='Initial learning rate')
     parser.add_argument('--data_dir', type=str,
                         help='Data path')
@@ -203,7 +214,9 @@ if __name__ == "__main__":
     parser.add_argument('--freeze', action='store_true', default=False, 
                         help='Whether to only train the last layer or not.')
     parser.add_argument('--loss', type=str, default='cross_entropy',
-                       help= 'Cross entropy or Focal loss')
+                       help= 'Cross entropy (cross_entropy) or Focal loss (focal)')
+    parser.add_argument('--imbalance_weights', type=str, default='class',
+                       help= 'Select weights per class (class), weights per image (image)')
     
     
     args = parser.parse_args()
