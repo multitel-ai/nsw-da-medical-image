@@ -1,4 +1,5 @@
 import bisect
+import collections
 import itertools
 import operator
 import pathlib
@@ -94,6 +95,7 @@ class VideoMetadata(typing.NamedTuple):
 def _get_video_frames(
     plane_path: pathlib.Path,
     videos: list[Video],
+    select_median_only: bool,
 ) -> list[VideoMetadata]:
     videos_metadata: list[VideoMetadata] = []
     _running_count = 0
@@ -110,12 +112,27 @@ def _get_video_frames(
             frame_lst.append(frame_number)
 
         phases = VideoPhases.read(plane_path.parent, _video)
-        frame_lst = phases.filter_frames(frame_lst)
+        frame_lst = sorted(phases.filter_frames(frame_lst))
+        annotations = phases.annotate_lst(frame_lst)
+
+        if select_median_only:
+            selected_frame_idx: list[int] = []
+
+            frame_per_phase: dict[Phase, list[int]] = collections.defaultdict(list)
+            for frame_idx, phase in enumerate(annotations):
+                frame_per_phase[phase].append(frame_idx)
+
+            for phase, lst in frame_per_phase.items():
+                lst = sorted(lst)
+                median_frame_index = lst[len(lst) // 2]
+                selected_frame_idx.append(median_frame_index)
+
+            frame_lst = [frame_lst[i] for i in selected_frame_idx]   
 
         prefix = frame_file.stem[:idx]  # type:ignore
         metadata = VideoMetadata(
             video=_video.idx(),
-            frames=sorted(frame_lst),
+            frames=frame_lst,
             prefix=prefix,
             cum_num_frames=_running_count,
             phases=phases
@@ -135,6 +152,7 @@ class NSWDataset(Dataset[DataItem]):
         videos: list[Video] | None = None,
         planes: list[FocalPlane] | None = None,
         transform: typing.Callable[[Image.Image], torch.Tensor] | None = None,
+        select_median_only: bool = False,
     ) -> None:
         super().__init__()
 
@@ -151,6 +169,7 @@ class NSWDataset(Dataset[DataItem]):
         self.videos_metadata = _get_video_frames(
             self.base_path / (PREFIX + self.planes[0].suffix),
             self.videos,
+            select_median_only,
         )
 
     def frames_per_plane(self) -> int:

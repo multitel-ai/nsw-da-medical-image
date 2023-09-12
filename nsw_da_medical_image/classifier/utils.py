@@ -44,7 +44,8 @@ def get_dataloader(
     data_dir: str,
     mode: str,
     batch_size: int,
-    json_file: str
+    json_file: str,
+    select_median_only: bool = False,
 ) -> DataLoader:
     kfold = json.load(open(json_file))
     files = list(kfold[mode])
@@ -69,7 +70,8 @@ def get_dataloader(
             base_path,
             videos=[video_from_dir(file) for file in files],
             planes=[du.FocalPlane.F_0],
-            transform=data_aug
+            transform=data_aug,
+            select_median_only=select_median_only,
         )
     
 
