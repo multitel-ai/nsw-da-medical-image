@@ -48,6 +48,7 @@ def run_train(architecture: str,
               wandb_project_name: str = None,
               wandb_run_name: str = None,
               save_dir: str = '/App/models',
+              train_on_median: bool = False,
               freeze: bool = False):
     set_seed()
     device = get_device()
@@ -55,7 +56,7 @@ def run_train(architecture: str,
     model = model.to(device)
     if imbalance_weights=='class':
         print("class weights")
-        loss_weights = get_weights(data_dir,json_file).to(device)
+        loss_weights = get_weights(data_dir,json_file,'train').to(device)
     else:
         loss_weights = None
     if args.loss == 'cross_entropy':
@@ -88,8 +89,10 @@ def run_train(architecture: str,
     os.makedirs(save_dir/"best")
     os.makedirs(save_dir/"checkpoint")
     
-    tr_loader = get_dataloader(data_dir, "train", batch_size, json_file,imbalance_weights)
-    val_loader = get_dataloader(data_dir, "val", batch_size, json_file)
+
+    tr_loader = get_dataloader(data_dir, "train", batch_size, json_file,imbalance_weights,select_median_only=train_on_median)
+    val_loader = get_dataloader(data_dir, "val", batch_size, json_file,select_median_only=False)
+
     
     train_dataset_length = len(tr_loader)
     
@@ -183,6 +186,7 @@ def main(args):
               imbalance_weights = args.imbalance_weights,
               wandb_project_name=args.wandb_project, 
               wandb_run_name=args.name,
+              train_on_median=args.train_on_median,
               freeze=args.freeze)
         
 if __name__ == "__main__":
@@ -213,6 +217,8 @@ if __name__ == "__main__":
                         help='Directory to save the models to')
     parser.add_argument('--freeze', action='store_true', default=False, 
                         help='Whether to only train the last layer or not.')
+    parser.add_argument('--train_on_median', action='store_true', default=False,
+                        help='Whether to select only median frames of phases for training.')
     parser.add_argument('--loss', type=str, default='cross_entropy',
                        help= 'Cross entropy (cross_entropy) or Focal loss (focal)')
     parser.add_argument('--imbalance_weights', type=str, default='class',

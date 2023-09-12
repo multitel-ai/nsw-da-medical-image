@@ -15,26 +15,20 @@ def video_from_dir(dir: str) -> du.Video:
             return vid
     raise ValueError("Video directory not found.")
 
-def get_weights(data_dir: str, json_file: str) -> torch.Tensor:
+def get_weights(data_dir: str, json_file: str, mode:str) -> torch.Tensor:
     kfold = json.load(open(json_file))
-    videos = list(kfold["train"])
-    class_dict: Dict[str, int] = {}
+    files = list(kfold[mode])
+    ground_truth_df = pd.read_csv("ground-truth.csv")
 
-    for video in videos:
-        info_video = pd.read_csv(f"{data_dir}embryo_dataset_annotations/{video}_phases.csv", header=None)
-        classes = info_video[0].tolist()
-        n_classes = (info_video[2] - info_video[1] + 1).tolist()
-        count_classes_dict = dict(zip(classes, n_classes))
+    ground_truth_df[["video", "frame"]] = ground_truth_df.identifier.str.extract(r"F.\d\d_(.*)_(\d+)")
+    train_gt = ground_truth_df[ground_truth_df.video.isin(files) & ground_truth_df.identifier.str.startswith("F+00")]
+    classes, count_classes = np.unique(train_gt['phase-label'], return_counts=True)
+    
+    weight_per_class = []                                 
+    N = float(sum(count_classes))
 
-        for cl, n_cl in count_classes_dict.items():
-            class_dict[cl] = class_dict.get(cl, 0) + n_cl
-    
-    weight_per_class: List[float] = []
-    N = float(sum(class_dict.values()))
-    
-    for i in range(len(class_dict)):
-        cl = du.Phase.from_idx(i).label
-        weight_per_class.append(N / float(class_dict[cl]))
+    for i in range(0,len(classes)):
+        weight_per_class.append(N/float(count_classes[i]))
     
     return torch.tensor(weight_per_class)
            
@@ -46,7 +40,7 @@ def get_weights_per_image(base_path,videos,data_aug):
         planes=[du.FocalPlane.F_0],
         transform=data_aug)
           
-    phases =[phase.idx() for phase in data_set.all_phases()]
+    phases =[phase.label for phase in data_set.all_phases()]
     classes, count_classes = np.unique(phases, return_counts=True)
 
     weight_per_class = {}                                    
@@ -68,6 +62,7 @@ def get_dataloader(
     batch_size: int,
     json_file: str,
     sampler_weights:str = 'class',
+    select_median_only: bool = False,
 ) -> DataLoader:
     kfold = json.load(open(json_file))
     files = list(kfold[mode])
@@ -104,7 +99,8 @@ def get_dataloader(
             base_path,
             videos=[video_from_dir(file) for file in files],
             planes=[du.FocalPlane.F_0],
-            transform=data_aug
+            transform=data_aug,
+            select_median_only=select_median_only,
         )
     
 
