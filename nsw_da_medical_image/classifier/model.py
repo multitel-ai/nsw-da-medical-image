@@ -24,6 +24,7 @@ def build_model(net: str = 'resnet50', path: str = None) -> Module:
     if path == "pretrained":
         os.environ['TORCH_HOME'] = '.'
         model = model_class(weights=weights)
+        model = _modify_last_layer(model, net)
     elif path:
         model = model_class(num_classes=16)
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -32,7 +33,6 @@ def build_model(net: str = 'resnet50', path: str = None) -> Module:
         model = model_class(num_classes=16)
         model = _initialize_weights(model)
 
-    model = _modify_last_layer(model, net)
     
     return model
 
