@@ -1,6 +1,6 @@
 """enums: some classes to represent the dataset
 
-All enums should be decorated with 'enum_by_index' so they have the methods
+All enums should derive from `EnumIdx` so they have the methods
 
     def idx(self) -> int:
         ...
@@ -8,12 +8,9 @@ All enums should be decorated with 'enum_by_index' so they have the methods
         ...
     def from_idx(idx: int) -> T:
         ...
-
     def from_indices(indices: typing.Iterable[int]) -> list[T]:
         ...
 """
-
-import random
 
 from .util import EnumIdx
 
@@ -79,31 +76,6 @@ class Video(EnumIdx):
     @property
     def directory(self) -> str:
         return self.value
-
-    @staticmethod
-    def split(n_splits: int, seed: int = 42):
-        """split the videos into multiple random set
-
-        - n_splits: number of splits
-        - seed: a pseudorandom seed for reproducibility
-        """
-
-        indices = Video.all_indices()
-        random.Random(seed).shuffle(indices)
-
-        count, truncated = divmod(len(Video), n_splits)
-
-        if count == 0:
-            raise ValueError(f"{n_splits=} is too much ({len(Video)=})")
-
-        ranges = [
-            (
-                split_idx * count + min(split_idx, truncated),
-                (split_idx + 1) * count + min(split_idx + 1, truncated),
-            )
-            for split_idx in range(n_splits)
-        ]
-        return [Video.from_indices(indices[lo:hi]) for lo, hi in ranges]
 
     AA83_7 = "AA83-7"
     AAL839_6 = "AAL839-6"

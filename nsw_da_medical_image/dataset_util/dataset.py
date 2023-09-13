@@ -221,7 +221,6 @@ class NSWDataset(Dataset[DataItem]):
         return list(itertools.chain.from_iterable(map(_annotate, self.videos_metadata)))
 
 
-
 def __label(plane: int, video: int, frame: int):
     plane_val = FocalPlane.from_idx(plane)
     video_val = Video.from_idx(video)
@@ -248,38 +247,3 @@ def label_batch(planes: torch.Tensor, videos: torch.Tensor, frames: torch.Tensor
         labels.append(__label(int(planes[idx]), int(videos[idx]), int(frames[idx])))
 
     return labels
-
-
-def __main():
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", type=str, help="extracted dataset")
-    parser.add_argument(
-        "--n-parts", type=int, default=1, help="how many parts should be split"
-    )
-    parser.add_argument(
-        "--part-index", type=int, default=0, help="index of the part to compute"
-    )
-    args = parser.parse_args()
-
-    if args.part_index >= args.n_parts:
-        raise ValueError(f"{args.part_index=} out of bound ({args.n_parts=})")
-
-    videos: list[Video] | None = None
-    if args.n_parts > 1:
-        videos = Video.split(args.n_parts)[args.part_index]
-
-    ds = NSWDataset(pathlib.Path(args.dataset), videos=videos)
-    for idx in range(len(ds)):
-        plane, video, frame, _, _ = ds.un_flatten_idx(idx)
-        try:
-            ds[idx]
-        except OSError as e:
-            print((video, plane, frame, str(e)))
-        except ZeroDivisionError as e:
-            print((video, plane, frame, str(e)))
-
-
-if __name__ == "__main__":
-    __main()
