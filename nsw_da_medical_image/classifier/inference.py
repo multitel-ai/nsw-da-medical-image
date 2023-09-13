@@ -46,7 +46,7 @@ def inference(
     out_path.mkdir(exist_ok=True)
 
     dataloader = get_dataloader(data_dir=data_path,
-                                mode=split,
+                                split=split,
                                 batch_size=batch_size,
                                 json_file=json_file)
     

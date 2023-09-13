@@ -1,4 +1,3 @@
-import os
 import random
 import numpy as np
 import torch
@@ -8,11 +7,9 @@ from torchvision import transforms, models
 from datetime import datetime
 from pathlib import Path
 import wandb
-import argparse
-from nsw_da_medical_image.dataset_util import dataset
-import nsw_da_medical_image.dataset_util as du
-from nsw_da_medical_image.classifier.model import build_model
-from nsw_da_medical_image.classifier.utils import get_dataloader, get_weights
+from .model import build_model
+from .utils import get_dataloader, get_weights
+import typing
 
 # Ensuring Reproducibility
 def set_seed():
@@ -35,12 +32,13 @@ def get_device():
         return torch.device('cpu')
 
 
-def run_train(architecture: str,
-              num_epochs: int,
+def run_train(num_epochs: int,
               lr: float,
               batch_size: int,
               weights: str,
               data_dir: str,
+              json_file: str,
+              architecture: str = typing.Literal['resnet50', 'densenet121'],
               wandb_project_name: str = None,
               wandb_run_name: str = None,
               save_dir: str = '/App/models',
@@ -49,7 +47,7 @@ def run_train(architecture: str,
     device = get_device()
     model = build_model(net=architecture, path=weights)
     model = model.to(device)
-    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(device))
+    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,json_file).to(device))
     
     if freeze:
         if "resnet" in architecture:
@@ -71,12 +69,12 @@ def run_train(architecture: str,
     now = datetime.now()
     formatted_string = now.strftime("%d-%m_%Hh%M")
     save_dir = Path(save_dir) / (formatted_string + "_" + wandb_run_name)
-    os.makedirs(save_dir)
-    os.makedirs(save_dir/"best")
-    os.makedirs(save_dir/"checkpoint")
+    save_dir.mkdir(exist_ok=True)
+    (save_dir/"best").mkdir(exist_ok=True)
+    (save_dir/"checkpoint").mkdir(exist_ok=True)
     
-    tr_loader = get_dataloader(data_dir, "train", batch_size, args.json_file)
-    val_loader = get_dataloader(data_dir, "val", batch_size, args.json_file)
+    tr_loader = get_dataloader(data_dir, "train", batch_size, json_file)
+    val_loader = get_dataloader(data_dir, "val", batch_size, json_file)
     
     train_dataset_length = len(tr_loader)
     
@@ -158,49 +156,5 @@ def run_train(architecture: str,
                  'Validation/Accuracy': acc},
                 step=(epoch*train_dataset_length)+tidx)
 
-def main(args):
-    run_train(architecture=args.architecture,
-              num_epochs=args.num_epochs,
-              lr=args.lr, 
-              batch_size=args.batch_size,
-              weights=args.pretrained_weights, 
-              data_dir=args.data_dir,
-              wandb_project_name=args.wandb_project, 
-              wandb_run_name=args.name,
-              freeze=args.freeze)
-        
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Runs the training of a classifier model for the embryo dataset.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-            
-    parser.add_argument('--architecture', type=str, default='resnet50',
-                        help='Model architecture')
-    parser.add_argument('--batch_size', type=int, default=16,
-                        help='batch size')
-    parser.add_argument('--num_epochs', type=int, default=50,
-                        help='Max number of epochs')
-    parser.add_argument('--lr', type=float, default=0.001,
-                        help='Initial learning rate')
-    parser.add_argument('--data_dir', type=str,
-                        help='Data path')
-    parser.add_argument('--json_file', type=str, default="data_split.json",
-                        help='Json file with train/val split')
-    parser.add_argument('--pretrained_weights', type=str, default="pretrained",
-                        help='Set pretrained weights')
-    parser.add_argument('--wandb_project', type=str, default='classifier', 
-                        help='wandb project name')
-    parser.add_argument('--name', type=str, default='Give me a name !', 
-                        help='wandb run name')
-    parser.add_argument('--save_dir', type=str, default='/App/models', 
-                        help='Directory to save the models to')
-    parser.add_argument('--freeze', action='store_true', default=False, 
-                        help='Whether to only train the last layer or not.')
-    
-    
-    args = parser.parse_args()
-    
-    main(args)
 
 
