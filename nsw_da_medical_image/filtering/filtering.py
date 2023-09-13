@@ -7,6 +7,8 @@ import numpy as np
 from nsw_da_medical_image.classifier.utils import get_test_transforms
 from torch.utils.data import DataLoader
 from scipy import stats
+from scipy.stats import multivariate_normal
+from sklearn.decomposition import PCA
 
 
 def main():
@@ -22,7 +24,7 @@ def main():
 
 
     parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.", default=False)
-    parser.add_argument("--val_batch_size",type=int,default=1)
+    parser.add_argument("--val_batch_size",type=int,default=64)
     parser.add_argument("--num_workers",type=int,default=0)
     parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
@@ -58,12 +60,14 @@ def main():
     vector_list = []
 
     def save_output(_,features,__):
+
         features = features[0]
 
         if args.debug:
             features = features[:,:10]
-        
-        vector_list.append(features[0].cpu())
+            
+        for feature in features:
+            vector_list.append(feature.cpu())
 
     synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
     dataset_label = synth_dataset.get_label()
@@ -103,27 +107,40 @@ def main():
     #Commpute mean and covariance matrix for the original dataset
     vector_list = []
     original_vectors = get_vectors(orig_dataset, orig_data_path)
+    pca = PCA(n_components=64)
+    original_vectors_new = pca.fit_transform(original_vectors)
 
-    mu = np.mean(original_vectors, axis=0)
-    cov_matrix = np.cov(original_vectors, rowvar=False)
-    
+    mu = np.mean(original_vectors_new, axis=0)
+    cov_matrix = np.cov(original_vectors_new, rowvar=False)
+    print(original_vectors_new)
+    print(mu)
+    #print(cov_matrix)
     
 
 
     #TODO : iterate over synthetic dataset and ca
     vector_list = []
     synthetic_vectors = get_vectors(synth_dataset, synth_data_path)
+    synthetic_vectors_new = pca.transform(synthetic_vectors)
+    #print(synthetic_vectors)
     
-    print(synthetic_vectors)
-    print(f"Final embedding length : {(synthetic_vectors[0].shape)}")
+
+    #print(synthetic_vectors)
+    print(f"Final embedding length : {(original_vectors_new[0].shape)[0]}")
 
     likely_list = []
 
-    for vector in synthetic_vectors:
-        m_dist_x = np.dot((vector-mu).transpose(),np.linalg.pinv(cov_matrix))
+    for vector in synthetic_vectors_new:
+        
+        m_dist_x = np.dot((vector-mu).transpose(),np.linalg.inv(cov_matrix))
         m_dist_x = np.dot(m_dist_x, (vector-mu))
-        likely_list.append(1-stats.chi2.cdf(m_dist_x, len(vector)))
-
+        likely_list.append(1-stats.chi2.cdf(m_dist_x, vector.shape[0]))
+        """
+        m_normal = stats.multivariate_normal(mean=mu, cov=cov_matrix,allow_singular=True)
+        likely_list.append(m_normal.pdf(vector))
+        """
+        
+    likely_list= np.argsort(likely_list)
     print(likely_list)
 
 if __name__ == "__main__":
