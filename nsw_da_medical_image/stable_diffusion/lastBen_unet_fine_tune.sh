@@ -18,9 +18,12 @@ mkdir -p "$OUTPUT_DIR"
 # Run the Python code
 accelerate launch train_dreambooth_lastBen.py \
   --wandb_project="$WANDB_PROJECT_NAME" \
+  --Session_dir="$8" \
   --wandb_run_name="$4" \
   --train_only_unet \
-  --save_starting_step=10000 \
+  --checkpointing_steps=$9 \
+  --save_starting_step=$9 \
+  --save_n_steps=$9 \
   --class_data_dir="$CLASS_DIR" \
   --pretrained_model_name_or_path="$MODEL_NAME" \
   --instance_data_dir="$INSTANCE_DIR" \
@@ -35,9 +38,9 @@ accelerate launch train_dreambooth_lastBen.py \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
   --num_class_images=200 \
-  --max_train_steps=$3\
-  --num_validation_images=5 \
-  --validation_steps=5000 \
+  --max_train_steps=$3 \
+  --num_validation_images=$11 \
+  --validation_steps=$10 \
   --validation_prompt="$instance_prompt"
 
     
