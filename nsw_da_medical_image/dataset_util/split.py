@@ -7,7 +7,9 @@ from .enums import Phase, Video
 from .dataset import VideoPhases
 
 
-def random_split(videos: list[Video], weights: typing.Iterable[float], prg: random.Random):
+def random_split(
+    videos: list[Video], weights: typing.Iterable[float], prg: random.Random
+):
     "randomly split `videos` into parts of length proportional to weights"
 
     weight_sum = sum(weights, 0.0)
@@ -108,6 +110,15 @@ def fair_random_split(
     weights: typing.Sequence[float] = (0.6, 0.2, 0.2),
     seed: int = 1234567890,
 ):
+    """split videos to have all phases present in each set with high probability.
+    This implements a heuristic and thus may not succeed in all cases.
+
+    Args:
+        per_phase_vid_lst (dict[Phase, list[Video]]): mapping from a phase to the list of all videos having at least one frame of this phase
+        weights (typing.Sequence[float], optional): relative size of each set. Defaults to (0.6, 0.2, 0.2).
+        seed (int, optional): seed. Defaults to 1234567890.
+    """
+
     # make a mutable copy
     to_be_sorted = {key: val[:] for key, val in per_phase_vid_lst.items()}
 
@@ -141,6 +152,16 @@ def fair_random_split(
 
 
 def check_fairness(base_path: pathlib.Path, sets: list[list[Video]]):
+    """Count the number of frames of each phase for each set such that `ret[p][idx]`
+    is the number of frames of phase `p` in set `idx`.
+
+    Args:
+        base_path (pathlib.Path): path of the extracted dataset
+        sets (list[list[Video]]): sets of videos
+
+    Returns:
+        dict[Phase, list[int]] number of frames of each phase in each set
+    """
     counters = [count_phases_in_videos(base_path, set_) for set_ in sets]
 
     phase_vals: dict[Phase, list[int]] = {}
