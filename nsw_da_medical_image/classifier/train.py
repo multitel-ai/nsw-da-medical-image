@@ -1,108 +1,90 @@
-# -*- coding: utf-8 -*-
-
-
-import torch
-import numpy
-from nsw_da_medical_image.dataset_util.dataset import NSWDataset
-from torchvision import transforms,models 
-import pathlib
-import nsw_da_medical_image.dataset_util as du
+import os
+import random
+import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import dataloader
-from torch.optim import Adam, Optimizer
-import numpy as np
-import random
-import json
-import argparse
-import os
-from nsw_da_medical_image.classifier.model import build_model
-import wandb
-from nsw_da_medical_image.classifier.utils import get_dataloader,get_weights
+from torch.optim import Adam
+from torchvision import transforms, models
 from datetime import datetime
 from pathlib import Path
+import wandb
+import argparse
+from nsw_da_medical_image.dataset_util import dataset
+import nsw_da_medical_image.dataset_util as du
+from nsw_da_medical_image.classifier.model import build_model
+from nsw_da_medical_image.classifier.utils import get_dataloader, get_weights
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type=int, default=16,
-                    help='batch size')
-parser.add_argument('--num_epochs', type=int, default=50,
-                    help='Max number of epochs')
-parser.add_argument('--lr', type=float, default=0.001,
-                    help='Initial learning rate')
-parser.add_argument('--data_dir', type=str,
-                    help='Data path')
-parser.add_argument('--json_file', type=str, default="data_split.json",
-                    help='Json file with train/val split')
-parser.add_argument('--pretrained_weights', type=str, default="pretrained",
-                    help='Set pretrained weights')
-parser.add_argument('--wandb_project', type=str, default='classifier', 
-                    help='wandb project name')
-parser.add_argument('--name', type=str, default='Give me a name !', 
-                    help='wandb run name')
-parser.add_argument('--save_dir', type=str, default='/App/models', 
-                    help='Directory to save the models to')
-
-
-
-args = parser.parse_args()
-args_pool = {
-            'n_class':len(du.Phase),
-            'channels':3,
-            'input_size': 256,
-            'train_batch_size': args.batch_size,
-            'val_batch_size': 64, 
-        }
-
-
-    
-############################# For reproducibility #############################################
-torch.random.manual_seed(0)
-np.random.seed(0)
-random.seed(0)
-def get_device():
+# Ensuring Reproducibility
+def set_seed():
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    random.seed(0)
     if torch.cuda.is_available():
-        print(torch.cuda.get_device_name())
         torch.multiprocessing.set_sharing_strategy('file_system')
         torch.cuda.manual_seed(0)
         torch.backends.cudnn.benchmark = False
+
+def get_device():
+    if torch.cuda.is_available():
+        print(torch.cuda.get_device_name())
         return torch.device('cuda')
     else:
         print('GPU not available')
+        # Uncomment the below line if you want to raise an error when GPU is not available.
         # raise Error("Cannot train the network on CPU. Make sure you have a GPU and that it is available.")
-###############################################################################################
+        return torch.device('cpu')
 
 
-def run_train(num_epochs: int,
+def run_train(architecture: str,
+              num_epochs: int,
               lr: float,
+              batch_size: int,
               weights: str,
               data_dir: str,
               wandb_project_name: str = None,
               wandb_run_name: str = None,
-              save_dir: str = '/App/models'):
-    dev = get_device()
-    mdl = build_model(path=weights)
-    mdl = mdl.to(dev)
-    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(dev))
-    optim = Adam(mdl.parameters(), lr=lr)
+              save_dir: str = '/App/models',
+              freeze: bool = False):
+    set_seed()
+    device = get_device()
+    model = build_model(net=architecture, path=weights)
+    model = model.to(device)
+    loss = nn.CrossEntropyLoss(weight=get_weights(data_dir,args.json_file).to(device))
+    
+    if freeze:
+        if "resnet" in architecture:
+            last_layer_name = "fc" 
+            params = model.fc.parameters()
+        elif "densenet" in architecture:
+            last_layer_name = "classifier"
+            params = model.classifier.parameters()
+        else:
+            raise Exception(f"Architecture not recognized: '{architecture}'")
+        for name, param in model.named_parameters():
+            if last_layer_name not in name:
+                param.requires_grad = False
+    else:
+        params = model.parameters()
+    
+    optimizer = Adam(params, lr=lr)
     
     now = datetime.now()
-    formatted_string = now.strftime("%d-%m_%H-%M")
-    save_dir = Path(save_dir) / (formatted_string + wandb_run_name)
+    formatted_string = now.strftime("%d-%m_%Hh%M")
+    save_dir = Path(save_dir) / (formatted_string + "_" + wandb_run_name)
     os.makedirs(save_dir)
     os.makedirs(save_dir/"best")
     os.makedirs(save_dir/"checkpoint")
     
-    tr_loader = get_dataloader(data_dir,"train",args_pool['train_batch_size'], args.json_file)
-    val_loader = get_dataloader(data_dir,"val",args_pool['val_batch_size'], args.json_file)
+    tr_loader = get_dataloader(data_dir, "train", batch_size, args.json_file)
+    val_loader = get_dataloader(data_dir, "val", batch_size, args.json_file)
     
-    #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=num_epochs)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=len(tr_loader)*1)
+    train_dataset_length = len(tr_loader)
+    
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs*train_dataset_length)
     
     wandb.login()
     wandb.init(project=wandb_project_name, mode="online", name=wandb_run_name, 
             entity='trail23-medical-image-diffusion')
-    
-    train_dataset_length = len(tr_loader)
 
     for epoch in range(num_epochs):
         epoch_loss = 0.0
@@ -110,77 +92,115 @@ def run_train(num_epochs: int,
         print("-" * 10)
         print(f"epoch {epoch + 1}/{num_epochs}")
 				
-        mdl.train()
+        model.train()
         
-        for idx, (img, phase, plane, video, frame) in enumerate(tr_loader):
+        for tidx, (images, phase, plane, video, frame) in enumerate(tr_loader):
             step += 1 
-            inp = img.to(dev)
-            lbl= phase.to(dev)
+            images = images.to(device)
+            labels = phase.to(device)
 
-            optim.zero_grad(set_to_none=True)     
+            optimizer.zero_grad(set_to_none=True)     
 
-            pred = mdl(inp)
+            labels_pred = model(images)
 
-            loss_pred = loss(pred, lbl).mean()
+            loss_pred = loss(labels_pred, labels).mean()
             loss_pred.backward()
             
             epoch_loss += loss_pred.item()
-            optim.step()
+            optimizer.step()
             
-            lr_scheduler.step(epoch + idx / train_dataset_length)  
+            lr_scheduler.step()
 
-            current_lr = optim.param_groups[0]["lr"]
+            current_lr = optimizer.param_groups[0]["lr"]
             if step % 100 == 0:
                 print(f"{step}/{len(tr_loader)}, train_loss: {loss_pred.item():.4f} // Current lr: {current_lr}")
 
             wandb.log(
     		      {'Training Loss/Total Loss': loss_pred.item(), 'Learning rate': current_lr}, 
-    		      step=(epoch*train_dataset_length)+idx)
+    		      step=(epoch*train_dataset_length)+tidx)
         
         torch.save({
             'epoch': epoch + 1,
-            'state_dict': mdl.state_dict(),
-            'optimizer': optim.state_dict(),
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
             'wandb_run_id': wandb.run.id,
             'scheduler': lr_scheduler.state_dict()
-        }, save_dir/"checkpoint"/ "checkpoint.pth")
+        }, save_dir/"checkpoint"/ (wandb_run_name + "checkpoint.pth"))
         
         epoch_loss /= step
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
 
-        mdl.eval()
+        model.eval()
         best_acc = 0.0
         with torch.no_grad():
+            print("Validation...")
             acc = 0.0
             epoch_loss_val = 0.0
-            for idx, (img, phase, _, _, _) in enumerate(val_loader):
-                inp = img.to(dev)
-                lbl = phase.to(dev)
+            for vidx, (images, phase, _, _, _) in enumerate(val_loader):
+                images = images.to(device)
+                labels = phase.to(device)
     
-                pred = mdl(inp)
-                acc += (pred.argmax(dim=1) == lbl).float().mean().item()
-                epoch_loss_val += loss(pred, lbl).mean().item()
+                labels_pred = model(images)
+                acc += (labels_pred.argmax(dim=1) == labels).float().mean().item()
+                epoch_loss_val += loss(labels_pred, labels).mean().item()
 
-            acc /= (idx+1)#len(val_loader)
-            
+            acc /= (vidx+1)
             epoch_loss_val /= len(val_loader)
             
             print(f"Accuracy after this epoch: {round(acc,4)}")
             
             if acc > best_acc:
-                torch.save(mdl.state_dict(), save_dir / "best" / "best_acc.pth")
+                torch.save(model.state_dict(), save_dir / "best" / ( wandb_run_name + "_best_acc.pth"))
     
             wandb.log(
                 {'Validation/Total Loss': epoch_loss_val,
                  'Validation/Accuracy': acc},
-                step=(epoch*train_dataset_length)+idx) 
-                
+                step=(epoch*train_dataset_length)+tidx)
+
+def main(args):
+    run_train(architecture=args.architecture,
+              num_epochs=args.num_epochs,
+              lr=args.lr, 
+              batch_size=args.batch_size,
+              weights=args.pretrained_weights, 
+              data_dir=args.data_dir,
+              wandb_project_name=args.wandb_project, 
+              wandb_run_name=args.name,
+              freeze=args.freeze)
+        
 if __name__ == "__main__":
-
-    run_train(num_epochs=args.num_epochs,lr=args.lr, weights=args.pretrained_weights, 
-              data_dir=args.data_dir,wandb_project_name=args.wandb_project, 
-              wandb_run_name=args.name)
-
+    parser = argparse.ArgumentParser(
+        description="Runs the training of a classifier model for the embryo dataset.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+            
+    parser.add_argument('--architecture', type=str, default='resnet50',
+                        help='Model architecture')
+    parser.add_argument('--batch_size', type=int, default=16,
+                        help='batch size')
+    parser.add_argument('--num_epochs', type=int, default=50,
+                        help='Max number of epochs')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='Initial learning rate')
+    parser.add_argument('--data_dir', type=str,
+                        help='Data path')
+    parser.add_argument('--json_file', type=str, default="data_split.json",
+                        help='Json file with train/val split')
+    parser.add_argument('--pretrained_weights', type=str, default="pretrained",
+                        help='Set pretrained weights')
+    parser.add_argument('--wandb_project', type=str, default='classifier', 
+                        help='wandb project name')
+    parser.add_argument('--name', type=str, default='Give me a name !', 
+                        help='wandb run name')
+    parser.add_argument('--save_dir', type=str, default='/App/models', 
+                        help='Directory to save the models to')
+    parser.add_argument('--freeze', action='store_true', default=False, 
+                        help='Whether to only train the last layer or not.')
+    
+    
+    args = parser.parse_args()
+    
+    main(args)
 
 
