@@ -19,8 +19,8 @@ from accelerate.logging import get_logger
 from accelerate.utils import set_seed, ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel,DiffusionPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.utils import check_min_version, is_wandb_available
-from huggingface_hub import HfFolder, Repository, whoami
+from diffusers.utils import is_wandb_available
+from huggingface_hub import HfFolder, whoami
 from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
@@ -211,13 +211,24 @@ def parse_args():
             "instructions."
         ),
     )
+
+    parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "Whether training should be resumed from a previous checkpoint. Use a path saved by"
+            ' `--checkpointing-steps`, or `"latest"` to automatically select the last available checkpoint.'
+        ),
+    )
+
     parser.add_argument(
         "--output_dir",
         type=str,
         default="",
         help="The output directory where the model predictions and checkpoints will be written.",
     )
-    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument("--seed", type=int, default=10, help="A seed for reproducible training.")
     parser.add_argument(
         "--resolution",
         type=int,
@@ -405,7 +416,7 @@ def parse_args():
         "--wandb_run_name",
         type=str,
         default="",
-        help="wandb project name",
+        help="wandb run name",
     )   
 
 
@@ -676,6 +687,8 @@ def main():
             pipeline = StableDiffusionPipeline.from_pretrained(
                 args.pretrained_model_name_or_path, torch_dtype=torch_dtype
             )
+            # model_path = '/App/models/stable_diffusion/phase-tPB2v2/'
+            # pipeline.unet.load_attn_procs(model_path, subfolder="checkpoint-18500", weight_name="pytorch_model.bin")
             pipeline.set_progress_bar_config(disable=True)
 
             num_new_images = args.num_class_images - cur_class_images
@@ -851,10 +864,11 @@ def main():
         tracker_config = vars(copy.deepcopy(args))
         tracker_config.pop("validation_images")
         accelerator.init_trackers(args.wandb_project, config=tracker_config)
+        wandb.name=args.wandb_run_name,
         wandb.init(
             project=args.wandb_project,
             config=tracker_config, 
-            name=args.wandb_run_name,
+            entity='trail23-medical-image-diffusion'
         )
 
     def bar(prg):
@@ -876,11 +890,41 @@ def main():
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     global_step = 0
 
+        # Potentially load in the weights and states from a previous save
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint != "latest":
+            path = os.path.basename(args.resume_from_checkpoint)
+        else:
+            # Get the most recent checkpoint
+            dirs = os.listdir(args.output_dir)
+            dirs = [d for d in dirs if d.startswith("checkpoint")]
+            dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
+            path = dirs[-1] if len(dirs) > 0 else None
+
+        if path is None:
+            accelerator.print(
+                f"Checkpoint '{args.resume_from_checkpoint}' does not exist. Starting a new training run."
+            )
+            args.resume_from_checkpoint = None
+        else:
+            accelerator.print(f"Resuming from checkpoint {path}")
+            accelerator.load_state(os.path.join(args.output_dir, path))
+            global_step = int(path.split("-")[1])
+
+            resume_global_step = global_step * args.gradient_accumulation_steps
+            first_epoch = global_step // num_update_steps_per_epoch
+            resume_step = resume_global_step % (num_update_steps_per_epoch * args.gradient_accumulation_steps)
+
     for epoch in range(args.num_train_epochs):
         unet.train()
         if args.train_text_encoder:
             text_encoder.train()
         for step, batch in enumerate(train_dataloader):
+
+            if args.resume_from_checkpoint and args.num_train_epochs < first_epoch:
+                if step % args.gradient_accumulation_steps == 0:
+                    progress_bar.update(1)
+                continue
             with accelerator.accumulate(unet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
