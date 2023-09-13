@@ -1,6 +1,5 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import argparse
 import os
 from pathlib import Path
 import numpy as np
@@ -111,17 +110,3 @@ def compare_metrics(directories, output_dir):
     plt.savefig(os.path.join(output_dir, 'mean_pr_auc_comparison.png'))
     plt.close()
     
-    
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(
-        description="Plots metrics of multiple models to compare them.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-
-    parser.add_argument("--directories", type=str, nargs='*', help="Paths to directories")
-    parser.add_argument("--save_dir", type=str, help="Path to directory where to save the plots")
-
-    args = parser.parse_args()
-    compare_metrics(args.directories, args.save_dir)
