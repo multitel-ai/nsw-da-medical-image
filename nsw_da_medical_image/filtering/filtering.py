@@ -1,4 +1,12 @@
 import torch
+import argparse
+import torchvision.models as models
+import os
+from filtering_utils import OrigImageFolder,SynthImageFolder
+import numpy as np
+from nsw_da_medical_image.classifier.utils import get_test_transforms
+from torch.utils.data import DataLoader
+from scipy import stats
 
 
 def main():
@@ -58,9 +66,11 @@ def main():
         vector_list.append(features[0].cpu())
 
     synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
+    dataset_label = synth_dataset.get_label()
     orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,dataset_label=dataset_label,max_size=args.max_dataset_size,debug=args.debug)
     orig_data_path = args.orig_data_path
     synth_data_path = args.synth_data_path
+    
 
     def get_vectors(dataset, data_dir_path): 
 
