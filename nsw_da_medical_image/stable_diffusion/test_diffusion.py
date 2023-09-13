@@ -1,8 +1,11 @@
 import torch
 import os 
 import argparse, sys
+from pathlib import Path
+from accelerate import Accelerator
+from accelerate.utils import ProjectConfiguration
 
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, UNet2DConditionModel
+from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler, UNet2DConditionModel
 
 __location__ = os.path.realpath(
     os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -21,16 +24,20 @@ def main(model_id, n_iter, version, prompt, output_dir):
         run_id += 1 
 
     output_folder_run = os.path.join(output_folder, f"run_{run_id}" )
-    os.mkdir(output_folder_run)
-
-
-    #model_id = "stabilityai/stable-diffusion-2-1"
+    os.mkdir(output_folder_run) 
     
+    logging_dir = Path(model_id, 'logs')
 
-    
-
-    # Use the DPMSolverMultistepScheduler (DPM-Solver++) scheduler here insteasd
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+    accelerator_project_config = ProjectConfiguration(project_dir=model_id, logging_dir=logging_dir)
+    accelerator = Accelerator(
+        gradient_accumulation_steps=1,
+        mixed_precision="no",
+        log_with='wandb',
+        project_config=accelerator_project_config
+    )
+    torch_dtype = torch.float16 if accelerator.device.type == "cuda" else torch.float32
+    unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet", torch_dtype=torch_dtype)
+    pipe = DiffusionPipeline.from_pretrained(model_id, unet=accelerator.unwrap_model(unet),torch_dtype=torch_dtype)
     pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to("cuda")
 
@@ -43,10 +50,10 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser()
 
-    parser.add_argument("--m", help="Model path", default = os.path.join(__location__,'models/v1.1'))
-    parser.add_argument("--n", help="Num iterrations", default = 3)
-    parser.add_argument("--v", help="Model version", default = "v1_1")
-    parser.add_argument("--p", help="Custom Prompt", default = "Medical image with optical microscope of a human embryo at development stage t2")
+    parser.add_argument("--m", help="Model path",)
+    parser.add_argument("--n", help="Num iterrations",)
+    parser.add_argument("--v", help="Model version", )
+    parser.add_argument("--p", help="Custom Prompt",)
     parser.add_argument('--o', help='path to where synthetic images would be saved')
 
     
