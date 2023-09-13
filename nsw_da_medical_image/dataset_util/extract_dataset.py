@@ -1,4 +1,3 @@
-import argparse
 import multiprocessing
 import pathlib
 import shutil
@@ -46,11 +45,12 @@ def extract_dataset(
     - source_directory: directory containing all archive files
     - destination directory: destination for the archive contents, must either not exist of be empty
     """
+    # FIXME the checks were removed because we only cared about the F0 and it would take too much time
+    # when we're ready for all focal-planes, the commented lines should be restored.
 
-    checklist = sorted([source_directory / f for f in get_all_archives()])
+    # checklist = sorted([source_directory / f for f in get_all_archives()])
     all_files = sorted(source_directory.iterdir())
 
-    # FIXME REMOVE THE COMMENTS WHEN ALL DATASETS ARE GOOD
     # if all_files != checklist:
     #    absent = set(checklist).difference(all_files)
     #    extras = set(all_files).difference(checklist)
@@ -69,18 +69,7 @@ def extract_dataset(
     if n_proc is None:
         n_proc = len(all_files)
 
+    print(f"extracting {all_files} to {destination_directory}")
     args = [(source_directory, destination_directory, path) for path in all_files]
     with multiprocessing.Pool(n_proc) as pool:
         pool.map(__prep_fn, args)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser("extract-dataset")
-    parser.add_argument("raw-dataset", type=str)
-    parser.add_argument("processed-dataset", type=str)
-    args = parser.parse_args()
-
-    extract_dataset(
-        pathlib.Path(args.__getattribute__("raw-dataset")),
-        pathlib.Path(args.__getattribute__("processed-dataset")),
-    )

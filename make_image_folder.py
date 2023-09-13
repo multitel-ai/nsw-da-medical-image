@@ -5,11 +5,14 @@ import pathlib
 import nsw_da_medical_image.dataset_util.image_folder as img_f
 import nsw_da_medical_image.dataset_util as du
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--dataset", type=str, required=True, help="extracted dataset")
-parser.add_argument("--split-file", type=str, required=True, help="path to split.json")
+parser = argparse.ArgumentParser(
+    description="Generate an image folder to train stable diffusion on median frames",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+parser.add_argument("--dataset", type=str, default="/App/data/extracted", help="extracted dataset")
+parser.add_argument("--split-file", type=str, default="/App/data/split.json", help="path to split.json")
 parser.add_argument(
-    "--set", type=str, choices=["train", "test", "eval"], required=True, help="which set to use",
+    "--set", type=str, choices=["train", "test", "val"], required=True, help="which set to use",
 )
 parser.add_argument(
     "--phases",
@@ -20,7 +23,7 @@ parser.add_argument(
     help="which phases should be included in the image folder",
 )
 parser.add_argument(
-    "--image-folder-parent", type=str, required=True, help="where the image folder will be created"
+    "--image-folder-parent", type=str, default="/App/data/image-folders", help="where the image folder will be created"
 )
 parser.add_argument(
     "--image-folder-name",
