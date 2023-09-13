@@ -3,9 +3,12 @@ import pathlib
 
 from nsw_da_medical_image.dataset_util.dataset import NSWDataset, label_single, Phase
 
-parser = argparse.ArgumentParser()
-parser.add_argument("dataset", type=str, help="extracted dataset")
-parser.add_argument("output", type=str, help="csv path")
+parser = argparse.ArgumentParser(
+    description="Generate the CSV file for the ground truth of every frame",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+parser.add_argument("--dataset", type=str, default="/App/data/extracted", help="Extracted dataset")
+parser.add_argument("--output", type=str, default="/App/code/ground_truth.csv", help="csv ground truth path (or parent directory)")
 args = parser.parse_args()
 
 base_path = pathlib.Path(args.dataset)
