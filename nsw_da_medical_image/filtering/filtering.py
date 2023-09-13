@@ -2,7 +2,7 @@ import torch
 import argparse
 import torchvision.models as models
 import os
-from filtering_utils import OrigImageFolder,SynthImageFolder
+from .filtering_utils import OrigImageFolder,SynthImageFolder
 import numpy as np
 from nsw_da_medical_image.classifier.utils import get_test_transforms
 from torch.utils.data import DataLoader
@@ -11,24 +11,24 @@ from scipy import stats
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
-    parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
-    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
-    parser.add_argument("--result_fold_path",type=str)
-    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.")
+    parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory", default="/App/data/embryo_dataset")
+    parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory",default="/App/data/synthetic_dataset/phase_t3-run_0/run_0")
+    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.", default="/App/data/embryo_dataset_annotations")
 
-    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
+    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.", default="split.json")
+
+    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.", default="/App/models/densenet_lr1e-5_ep10_bs32_CA_best_acc.pth")    
     parser.add_argument("--model_architecture",type=str, default="densenet121")
 
 
-    parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
-    parser.add_argument("--val_batch_size",type=int,default=50)
+    parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.", default=False)
+    parser.add_argument("--val_batch_size",type=int,default=1)
     parser.add_argument("--num_workers",type=int,default=0)
     parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
 
     args = parser.parse_args()
-
+    print()
     assert args.model_architecture in ["densenet121","resnet50"]
 
     cuda = torch.cuda.is_available()
@@ -71,10 +71,11 @@ def main():
     orig_data_path = args.orig_data_path
     synth_data_path = args.synth_data_path
     
+    print(f"length dataset : {len(orig_dataset)}")
 
     def get_vectors(dataset, data_dir_path): 
 
-        vector_list = []
+        
 
         if args.model_architecture == "densenet121":        
             last_layer_hook = model.classifier.register_forward_hook(save_output)
@@ -88,16 +89,19 @@ def main():
         for i,(imgs,labels) in enumerate(dataloader):
             if cuda:
                 imgs = imgs.cuda()
-                
+                _ = model(imgs)
+
                 if i > 1 and args.debug:
                     break
-        vectors = torch.cat(vector_list).numpy()
+
+        
+        vectors = [vec.numpy() for vec in vector_list]
 
         return vectors
 
     
     #Commpute mean and covariance matrix for the original dataset
-
+    vector_list = []
     original_vectors = get_vectors(orig_dataset, orig_data_path)
 
     mu = np.mean(original_vectors, axis=0)
@@ -107,13 +111,20 @@ def main():
 
 
     #TODO : iterate over synthetic dataset and ca
+    vector_list = []
     synthetic_vectors = get_vectors(synth_dataset, synth_data_path)
     
-    print(f"Final embedding length : {len(synthetic_vectors[0])}")
+    print(synthetic_vectors)
+    print(f"Final embedding length : {(synthetic_vectors[0].shape)}")
 
     likely_list = []
 
     for vector in synthetic_vectors:
-        m_dist_x = np.dot((vector-mu).transpose(),np.linalg.inv(cov_matrix))
+        m_dist_x = np.dot((vector-mu).transpose(),np.linalg.pinv(cov_matrix))
         m_dist_x = np.dot(m_dist_x, (vector-mu))
         likely_list.append(1-stats.chi2.cdf(m_dist_x, len(vector)))
+
+    print(likely_list)
+
+if __name__ == "__main__":
+    main()
