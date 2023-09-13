@@ -13,6 +13,8 @@ import glob
 import json
 import sys 
 
+from nsw_da_medical_image.classifier.utils import get_test_transforms
+
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -56,7 +58,7 @@ def shorten_dataset(img_list,labels,size=1000):
 
                     img_dic[label][video_name].pop(ind)
 
-    return new_img_list,new_labels
+    return new_img_list,np.array(new_labels)
 
 def get_img_ind(img_path):
     return int(os.path.splitext(os.path.basename(img_path))[0].split("RUN")[1])
@@ -67,19 +69,19 @@ def get_dataset_name(dataset_path):
     dataset_name = dataset_path.split("/")[-1]
     return dataset_name
 
-def get_imgs(root,is_subfolder):
+def get_imgs(root,is_orig_data,orig_annot_folder=None):
     found_images = []
     for ext in ALLOWED_EXT:
         found_images += glob.glob(os.path.join(root,"*."+ext))
 
-    if os.path.exists(os.path.join(root,"metadata.json")):
+    if not is_orig_data:
    
         with open(os.path.join(root,"metadata.json"),"r") as f:
             metadata = json.load(f)
 
         focal_plane = metadata["focal_plane"]
-        labels = LABELS_LIST.index(metadata["phase"])
-        labels = np.array([labels]*len(found_images)).astype("int")
+        label = LABELS_LIST.index(metadata["phase"])
+        labels = np.array([label]*len(found_images)).astype("int")
         
     else:
         
@@ -87,7 +89,7 @@ def get_imgs(root,is_subfolder):
             root = root[:-1]
         vid_name = root.split("/")[-1]
 
-        annotation_path = "../data/extracted/embryo_dataset_annotations/"+vid_name+"_phases.csv"
+        annotation_path = os.path.join(orig_annot_folder,vid_name+"_phases.csv")
         if os.path.exists(annotation_path):
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
@@ -105,55 +107,102 @@ def get_imgs(root,is_subfolder):
             found_images,labels = zip(*img_and_labels)
 
         else:
-            if is_subfolder:
-                raise ValueError("No metadata.json or corresponding phases.csv found. Root="+root)
-            else:
-                labels = None
+            raise ValueError("No metadata.json or corresponding phases.csv found. Root="+root)
 
         focal_plane = None
 
     return found_images,focal_plane,labels
 
+def getitem(idx,img_list,transform,labels):
+    img = Image.open(img_list[idx])
+    if transform is not None:
+        img = transform(img)
+    if img.shape[0] == 1:
+        img = np.repeat(img,3,0)
+    return img,labels[idx]
+
+class OrigImageFolder():
+    
+    def __init__(self,root,transform,orig_annot_folder,split_file_path,dataset_label,max_size=None,debug=False):
+
+        self.root = root
+        self.transform = transform
+        self.dataset_label = dataset_label
+
+        #Load the json file 
+        with open(split_file_path) as f:
+            split_dic = json.load(f)    
+    
+        found_images = []
+        labels = np.array([])
+        folds = glob.glob(os.path.join(root,"*/"))
+        for fold in folds:
+            vid_name = fold.split("/")[-2]
+            if vid_name in split_dic["test"]:
+                found_image_fold,_,labels_fold = get_imgs(fold,True,orig_annot_folder)
+                found_images += found_image_fold
+                labels = np.concatenate((labels,labels_fold),axis=0)
+            
+        self.labels = labels
+        self.img_list = np.array(found_images)
+
+        label_mask = self.labels == dataset_label
+        self.img_list = self.img_list[label_mask]
+        self.labels = self.labels[label_mask]
+        
+        if max_size is not None and len(self.img_list) > max_size:
+            self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
+
+        assert len(self.labels) == len(self.img_list)
+        print("Using",len(self.labels),"original images from label",dataset_label)
+
+        if debug:
+            with open("img_and_labels_orig.txt","w") as f:
+                for path,label in zip(self.img_list,labels):
+                    print(path,label,file=f)
+                    
+    def __len__(self):
+        return len(self.img_list)
+
+    def __getitem__(self,idx):
+        return getitem(idx,self.img_list,self.transform,self.labels)
+
 class SynthImageFolder():
 
-    def __init__(self,root,transform=None,max_size=None,debug=False):
+    def __init__(self,root,transform,debug=False):
 
         self.root = root
         self.transform = transform
         
-        found_images,_,labels = get_imgs(root,is_subfolder=False)
+        found_images = []
+        labels = np.array([])
+        folds = glob.glob(os.path.join(root,"*/"))
+        #for fold in folds:
+        found_images,_,labels = get_imgs(root,False)
 
-        if len(found_images) == 0:
-            labels = np.array([])
-            folds = glob.glob(os.path.join(root,"*/"))
-            for fold in folds:
-                found_image_fold,_,labels_fold = get_imgs(fold,is_subfolder=True)
-                found_images += found_image_fold
-                labels = np.concatenate((labels,labels_fold),axis=0)
+        #Labels contains the same value repeated as many times as there are images
+        #In a synthetic dataset, all images have the same label
+        self.dataset_label = labels[0]
 
         self.labels = labels
         self.img_list = found_images
 
-        if max_size is not None:
-            self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
-
         assert len(self.labels) == len(self.img_list)
+        print("Using",len(self.labels),"synthetic images from label",self.dataset_label)
 
         if debug:
-            with open("img_and_labels.txt","w") as f:
+            with open("img_and_labels_synth.txt","w") as f:
                 for path,label in zip(self.img_list,labels):
                     print(path,label,file=f)
 
     def __len__(self):
         return len(self.img_list)
 
+    def get_label(self):
+        return self.dataset_label
+
     def __getitem__(self,idx):
-        img = Image.open(self.img_list[idx])
-        if self.transform is not None:
-            img = self.transform(img)
-        if img.shape[0] == 1:
-            img = np.repeat(img,3,0)
-        return img
+        return getitem(idx,self.img_list,self.transform,self.labels)
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     #https://github.com/mseitzer/pytorch-fid/blob/master/src/pytorch_fid/fid_score.py#L152
@@ -216,15 +265,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
-    parser.add_argument("--model_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")
-    parser.add_argument("--debug",action="store_true")
-    parser.add_argument("--img_size",type=int,default=256)
+    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
+    parser.add_argument("--result_fold_path",type=str)
+    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.")
+
+    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
+    parser.add_argument("--model_architecture",type=str)
+
+
+    parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
     parser.add_argument("--val_batch_size",type=int,default=50)
-    parser.add_argument("--num_workers",type=int,default=4)
-    parser.add_argument("--result_fold_path",type=str,default="../results")
-    parser.add_argument("--num_classes",type=int,default=15)
+    parser.add_argument("--num_workers",type=int,default=0)
+    parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
+
     args = parser.parse_args()
+
+    assert args.model_architecture in ["densenet121","resnet50"]
 
     if not os.path.exists(args.result_fold_path):
         os.makedirs(args.result_fold_path)
@@ -233,17 +290,19 @@ def main():
     torch.set_grad_enabled(False)
 
     # Load model
-    if args.model_path is None:
-        model = models.densenet121(weights="IMAGENET1K_V1")
+    if args.model_weights_path is None:
+        model = getattr(models,args.model_architecture)(weights="IMAGENET1K_V1")
         if args.debug:
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
         model_name = None
     else:
-        model = models.densenet121(num_classes=args.num_classes)
-        model.load_state_dict(torch.load(args.model_path))
-        model_name = os.path.splitext(os.path.basename(args.model_path))[0]
+        model = getattr(models,args.model_architecture)(num_classes=args.num_classes)
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        weights = torch.load(args.model_weights_path,map_location=device)
+        model.load_state_dict(weights)
+        model_name = os.path.splitext(os.path.basename(args.model_weights_path))[0]
     model.eval()
     if cuda:
         model = model.cuda()
@@ -252,12 +311,25 @@ def main():
     #to get the feature vector
     vector_list = []
     def save_output(_,features,__):
+        features = features[0]
+
+        if args.debug:
+            features = features[:,:10]
+        
         vector_list.append(features[0].cpu())
-    model.classifier.register_forward_hook(save_output)
+
+    if args.model_architecture == "densenet121":        
+        model.classifier.register_forward_hook(save_output)
+    else:
+        model.fc.register_forward_hook(save_output)
 
     stat_dic = {}
 
-    for data_dir_path,is_synth in zip([args.orig_data_path,args.synth_data_path],[False,True]):
+    synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
+    dataset_label = synth_dataset.get_label()
+    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,dataset_label=dataset_label,max_size=args.max_dataset_size,debug=args.debug)
+
+    for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[args.orig_data_path,args.synth_data_path]):
 
         dataset_name = get_dataset_name(data_dir_path)
         mu_path = args.result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
@@ -267,23 +339,22 @@ def main():
 
         logit_list = []
         vector_list = []
+        labels_list = []
 
         if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
-            # Load image folder
 
-            max_size = None if is_synth else args.max_dataset_size
-            dataset = SynthImageFolder(data_dir_path,transform=transforms.Compose([
-                                                                transforms.Resize(args.img_size),
-                                                                transforms.CenterCrop(args.img_size),
-                                                                transforms.ToTensor()]),max_size=max_size,debug=args.debug)
-            
             dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
-            for img in dataloader:
+            for i,(imgs,labels) in enumerate(dataloader):
                 if cuda:
-                    img = img.cuda()
-                logit_list.append(model(img).cpu())
+                    imgs = imgs.cuda()
+                logit_list.append(model(imgs).cpu())
+                labels_list.append(labels)
+
+                if i > 1 and args.debug:
+                    break
             
+            labels = torch.cat(labels_list).numpy()
             vectors = torch.cat(vector_list).numpy()
 
             mu = np.mean(vectors, axis=0)
@@ -300,7 +371,7 @@ def main():
             np.save(entropy_path,entropy)
 
             predictions = torch.argmax(logits,dim=1).numpy()
-            accuracy = (predictions == dataset.labels).mean()
+            accuracy = (predictions == labels).astype(float).mean()
             np.save(accuracy_path,accuracy)
 
         else:
@@ -321,15 +392,15 @@ def main():
     accuracy_orig_data = stat_dic[orig_dataset]["accuracy"]
     accuracy_synth_data = stat_dic[synth_dataset]["accuracy"]
 
-    csv_path = args.result_fold_path+"/metrics.csv"
+    csv_path = args.result_fold_path+"/img_generator_metrics.csv"
 
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
         with open(csv_path,"w") as f:
-            f.write("model_name,orig_data,synth_data,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
+            f.write("model_name,orig_data,synth_data,label,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
 
     with open(csv_path,"a") as f:
-        f.write(f"{model_name},{orig_dataset},{synth_dataset},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
+        f.write(f"{model_name},{orig_dataset},{synth_dataset},{dataset_label},{entropy_orig_data},{entropy_synth_data},{accuracy_orig_data},{accuracy_synth_data},{fid}\n")
 
 if __name__ == "__main__":
     main()
