@@ -13,14 +13,13 @@ import glob
 import json
 import sys 
 
+from nsw_da_medical_image.dataset_util import enums
 from nsw_da_medical_image.classifier.utils import get_test_transforms
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 ALLOWED_EXT = ["jpg","jpeg"]
-
-LABELS_LIST = ["tPB2","tPNa","tPNf","t2","t3","t4","t5","t6","t7","t8","t9+","tM","tSB","tB","tEB","tHB"]
 
 def shorten_dataset(img_list,labels,size=1000):
 
@@ -74,13 +73,15 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
     for ext in ALLOWED_EXT:
         found_images += glob.glob(os.path.join(root,"*."+ext))
 
+    all_labels_list = [phase.label for phase in list(enums.Phase)]
+
     if not is_orig_data:
    
         with open(os.path.join(root,"metadata.json"),"r") as f:
             metadata = json.load(f)
 
         focal_plane = metadata["focal_plane"]
-        label = LABELS_LIST.index(metadata["phase"])
+        label = all_labels_list.index(metadata["phase"])
         labels = np.array([label]*len(found_images)).astype("int")
         
     else:
@@ -94,7 +95,7 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
             for phase in phases:
-                labels[int(phase[1]):int(phase[2])+1] = LABELS_LIST.index(phase[0])
+                labels[int(phase[1]):int(phase[2])+1] = all_labels_list.index(phase[0])
             
             img_and_labels = []
             for img_path in found_images:
