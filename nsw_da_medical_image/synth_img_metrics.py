@@ -18,6 +18,27 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 ALLOWED_EXT = ["jpg","jpeg"]
 
 def shorten_dataset(img_list,labels,size=1000):
+    """
+    Randomly selects a subset of images and their corresponding labels from a given dataset.
+
+    Args:
+    img_list (list): A list of image file paths.
+    labels (list): A list of labels corresponding to the images.
+    size (int, optional): The desired size of the shortened dataset. Default is 1000.
+
+    Returns:
+    tuple: A tuple containing two elements:
+        - List of selected image file paths (new_img_list).
+        - NumPy array of corresponding labels (new_labels).
+
+    The function organizes the input images and labels by their associated categories and video names
+    and then randomly selects images from each category and video until the desired dataset size is reached.
+
+    Example:
+    >>> img_paths = ["path/to/image1.jpg", "path/to/image2.jpg", ...]
+    >>> labels = ["cat", "dog", ...]
+    >>> new_img_list, new_labels = shorten_dataset(img_paths, labels, size=500)
+    """
 
     img_dic = {}
     for label,img_path in zip(labels,img_list):
@@ -56,6 +77,18 @@ def shorten_dataset(img_list,labels,size=1000):
     return new_img_list,np.array(new_labels)
 
 def get_img_ind(img_path):
+    """
+    This function takes an image file path and extracts a numeric index from the
+    file name. It assumes that the index is located after the string "RUN" and
+    before the file extension. For example, if the image_path is "image_RUN123.jpg",
+    this function will return 123 as an integer.
+
+    Example:
+    >>> img_path = "path/to/image_RUN42.jpg"
+    >>> index = get_img_ind(img_path)
+    >>> print(index)
+    42
+    """
     return int(os.path.splitext(os.path.basename(img_path))[0].split("RUN")[1])
 
 def get_dataset_name(dataset_path):
@@ -65,6 +98,27 @@ def get_dataset_name(dataset_path):
     return dataset_name
 
 def get_imgs(root,is_orig_data,orig_annot_folder=None):
+    """
+    Collects image file paths, focal plane information, and labels for a dataset.
+
+    Args:
+    root (str): The root directory containing image files or metadata.
+    is_orig_data (bool): Indicates whether the dataset is composed of original or synthetic data.
+    orig_annot_folder (str, optional): The folder containing annotations for original data if is_orig_data is True.
+
+    Returns:
+    tuple: A tuple containing three elements:
+        - List of image file paths (found_images).
+        - Focal plane information (focal_plane).
+        - NumPy array of labels (labels).
+
+    Example:
+    >>> root_dir = "../data/extracted/embryo_dataset/"
+    >>> is_original = True
+    >>> orig_annot_folder = "../data/extracted/embryo_dataset_annotation/"
+    >>> images, focal_plane, labels = get_imgs(root_dir, is_original, orig_annot_folder)
+    """
+
     found_images = []
     for ext in ALLOWED_EXT:
         found_images += glob.glob(os.path.join(root,"*."+ext))
@@ -258,7 +312,48 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return (diff.dot(diff) + np.trace(sigma1)
             + np.trace(sigma2) - 2 * tr_covmean)
 
-def compute_synth_img_metrics(model_architecture,result_fold_path,model_weights_path,debug,num_classes,synth_data_path,orig_data_path,orig_data_annot_folder,split_file_path,max_dataset_size,val_batch_size,num_workers):
+def compute_synth_img_metrics(model_architecture,result_fold_path,model_weights_path,debug,num_classes,synth_data_path,orig_data_path,orig_data_annot_folder,split_file_path,max_dataset_size,batch_size,num_workers):
+    """
+    Compute metrics for synthetic image data using a specified deep learning model.
+
+    Args:
+    model_architecture (str): The architecture of the deep learning model (can be "densenet121" or "resnet50").
+    result_fold_path (str): The directory to save result files.
+    model_weights_path (str): The path to the model weights file.
+    debug (bool): Indicates whether to run in debug mode.
+    num_classes (int): The number of classes.
+    synth_data_path (str): The path to the synthetic image folder.
+    orig_data_path (str): The path to the original image dataset.
+    orig_data_annot_folder (str): The folder containing annotations for the original dataset.
+    split_file_path (str): The path to the file specifying dataset splits ("split.json").
+    max_dataset_size (int): The size of the subset that will be sampled from the original dataset.
+    batch_size (int): Batch size for inference.
+    num_workers (int): The number of data loader workers.
+
+    Returns:
+    None
+
+    This function computes various metrics for synthetic image data using a specified deep learning model.
+    It calculates FID (Frechet Inception Distance), entropy, and accuracy for both original and synthetic datasets
+    and saves the results in a CSV file.
+
+    Example:
+    >>> model_architecture = "densenet121"
+    >>> result_fold_path = "/path/to/results/"
+    >>> model_weights_path = "/path/to/model/weights.pth"
+    >>> debug = False
+    >>> num_classes = 16
+    >>> synth_data_path = "../data/synthetic/model1/run1/"
+    >>> orig_data_path = "../data/extracted/embryo_dataset"
+    >>> orig_data_annot_folder = "../data/extracted/embryo_dataset_annotations"
+    >>> split_file_path = "split.json"
+    >>> max_dataset_size = 5000
+    >>> batch_size = 32
+    >>> num_workers = 0
+    >>> compute_synth_img_metrics(model_architecture, result_fold_path, model_weights_path, debug, num_classes,
+    ... synth_data_path, orig_data_path, orig_data_annot_folder, split_file_path, max_dataset_size, batch_size,
+    ... num_workers)
+    """
 
     assert model_architecture in ["densenet121","resnet50"]
 
@@ -323,7 +418,7 @@ def compute_synth_img_metrics(model_architecture,result_fold_path,model_weights_
 
         if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
 
-            dataloader = DataLoader(dataset,batch_size=val_batch_size,shuffle=False,num_workers=num_workers)
+            dataloader = DataLoader(dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers)
 
             for i,(imgs,labels) in enumerate(dataloader):
                 if cuda:

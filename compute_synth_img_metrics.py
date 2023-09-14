@@ -21,14 +21,14 @@ def main():
 
 
     parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
-    parser.add_argument("--val_batch_size",type=int,default=50)
+    parser.add_argument("--batch_size",type=int,default=50)
     parser.add_argument("--num_workers",type=int,default=0)
     parser.add_argument("--num_classes",type=int,default=16)
     parser.add_argument("--max_dataset_size",type=int,default=5000)
 
     args = parser.parse_args()
 
-    compute_synth_img_metrics(args.model_architecture,args.result_fold_path,args.model_weights_path,args.debug,args.num_classes,args.synth_data_path,args.orig_data_path,args.orig_data_annot_folder,args.split_file_path,args.max_dataset_size,args.val_batch_size,args.num_workers)
+    compute_synth_img_metrics(args.model_architecture,args.result_fold_path,args.model_weights_path,args.debug,args.num_classes,args.synth_data_path,args.orig_data_path,args.orig_data_annot_folder,args.split_file_path,args.max_dataset_size,args.batch_size,args.num_workers)
 
 if __name__ == "__main__":
     main()
