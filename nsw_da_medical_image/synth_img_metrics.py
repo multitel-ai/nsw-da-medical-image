@@ -1,17 +1,13 @@
 
 import torch
-import torchvision
-import torchvision.transforms as transforms
 import torchvision.models as models
 from torch.utils.data import DataLoader
 import numpy as np
 import os
-import argparse
 import scipy.linalg as linalg
 from PIL import Image
 import glob 
 import json
-import sys 
 
 from nsw_da_medical_image.dataset_util import enums
 from nsw_da_medical_image.classifier.utils import get_test_transforms
@@ -262,48 +258,31 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return (diff.dot(diff) + np.trace(sigma1)
             + np.trace(sigma2) - 2 * tr_covmean)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
-    parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
-    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
-    parser.add_argument("--result_fold_path",type=str)
-    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.")
+def compute_synth_img_metrics(model_architecture,result_fold_path,model_weights_path,debug,num_classes,synth_data_path,orig_data_path,orig_data_annot_folder,split_file_path,max_dataset_size,val_batch_size,num_workers):
 
-    parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
-    parser.add_argument("--model_architecture",type=str)
+    assert model_architecture in ["densenet121","resnet50"]
 
 
-    parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
-    parser.add_argument("--val_batch_size",type=int,default=50)
-    parser.add_argument("--num_workers",type=int,default=0)
-    parser.add_argument("--num_classes",type=int,default=16)
-    parser.add_argument("--max_dataset_size",type=int,default=5000)
-
-    args = parser.parse_args()
-
-    assert args.model_architecture in ["densenet121","resnet50"]
-
-    if not os.path.exists(args.result_fold_path):
-        os.makedirs(args.result_fold_path)
+    if not os.path.exists(result_fold_path):
+        os.makedirs(result_fold_path)
 
     cuda = torch.cuda.is_available()
     torch.set_grad_enabled(False)
 
     # Load model
-    if args.model_weights_path is None:
-        model = getattr(models,args.model_architecture)(weights="IMAGENET1K_V1")
-        if args.debug:
+    if model_weights_path is None:
+        model = getattr(models,model_architecture)(weights="IMAGENET1K_V1")
+        if debug:
             print("Warning: no model path provided, using imagenet weights to debug")
         else:
             raise ValueError("No model path provided")
         model_name = None
     else:
-        model = getattr(models,args.model_architecture)(num_classes=args.num_classes)
+        model = getattr(models,model_architecture)(num_classes=num_classes)
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        weights = torch.load(args.model_weights_path,map_location=device)
+        weights = torch.load(model_weights_path,map_location=device)
         model.load_state_dict(weights)
-        model_name = os.path.splitext(os.path.basename(args.model_weights_path))[0]
+        model_name = os.path.splitext(os.path.basename(model_weights_path))[0]
     model.eval()
     if cuda:
         model = model.cuda()
@@ -314,29 +293,29 @@ def main():
     def save_output(_,features,__):
         features = features[0]
 
-        if args.debug:
+        if debug:
             features = features[:,:10]
         
         vector_list.append(features[0].cpu())
 
-    if args.model_architecture == "densenet121":        
+    if model_architecture == "densenet121":        
         model.classifier.register_forward_hook(save_output)
     else:
         model.fc.register_forward_hook(save_output)
 
     stat_dic = {}
 
-    synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
+    synth_dataset = SynthImageFolder(synth_data_path,get_test_transforms(),debug=debug)
     dataset_label = synth_dataset.get_label()
-    orig_dataset = OrigImageFolder(args.orig_data_path,get_test_transforms(),args.orig_data_annot_folder,args.split_file_path,dataset_label=dataset_label,max_size=args.max_dataset_size,debug=args.debug)
+    orig_dataset = OrigImageFolder(orig_data_path,get_test_transforms(),orig_data_annot_folder,split_file_path,dataset_label=dataset_label,max_size=max_dataset_size,debug=debug)
 
-    for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[args.orig_data_path,args.synth_data_path]):
+    for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[orig_data_path,synth_data_path]):
 
         dataset_name = get_dataset_name(data_dir_path)
-        mu_path = args.result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
-        sigma_path = args.result_fold_path+f"/std_{dataset_name}_{model_name}.npy"
-        entropy_path = args.result_fold_path+f"/entropy_{dataset_name}_{model_name}.npy"
-        accuracy_path = args.result_fold_path+f"/accuracy_{dataset_name}_{model_name}.npy"
+        mu_path = result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
+        sigma_path = result_fold_path+f"/std_{dataset_name}_{model_name}.npy"
+        entropy_path = result_fold_path+f"/entropy_{dataset_name}_{model_name}.npy"
+        accuracy_path = result_fold_path+f"/accuracy_{dataset_name}_{model_name}.npy"
 
         logit_list = []
         vector_list = []
@@ -344,7 +323,7 @@ def main():
 
         if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
 
-            dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
+            dataloader = DataLoader(dataset,batch_size=val_batch_size,shuffle=False,num_workers=num_workers)
 
             for i,(imgs,labels) in enumerate(dataloader):
                 if cuda:
@@ -352,7 +331,7 @@ def main():
                 logit_list.append(model(imgs).cpu())
                 labels_list.append(labels)
 
-                if i > 1 and args.debug:
+                if i > 1 and debug:
                     break
             
             labels = torch.cat(labels_list).numpy()
@@ -383,8 +362,8 @@ def main():
 
         stat_dic[dataset_name] = {"mu":mu,"std":std,"entropy":entropy,"accuracy":accuracy}
 
-    orig_dataset = get_dataset_name(args.orig_data_path)
-    synth_dataset = get_dataset_name(args.synth_data_path)
+    orig_dataset = get_dataset_name(orig_data_path)
+    synth_dataset = get_dataset_name(synth_data_path)
 
     fid = calculate_frechet_distance(stat_dic[orig_dataset]["mu"],stat_dic[orig_dataset]["std"],stat_dic[synth_dataset]["mu"],stat_dic[synth_dataset]["std"])
     entropy_orig_data = stat_dic[orig_dataset]["entropy"]
@@ -393,7 +372,7 @@ def main():
     accuracy_orig_data = stat_dic[orig_dataset]["accuracy"]
     accuracy_synth_data = stat_dic[synth_dataset]["accuracy"]
 
-    csv_path = args.result_fold_path+"/img_generator_metrics.csv"
+    csv_path = result_fold_path+"/synth_img_metrics.csv"
 
     #if csv does not exists, create it with header 
     if not os.path.exists(csv_path):
