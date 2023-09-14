@@ -312,7 +312,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return (diff.dot(diff) + np.trace(sigma1)
             + np.trace(sigma2) - 2 * tr_covmean)
 
-def compute_synth_img_metrics(model_architecture,result_fold_path,model_weights_path,debug,num_classes,synth_data_path,orig_data_path,orig_data_annot_folder,split_file_path,max_dataset_size,batch_size,num_workers):
+def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architecture="resnet50",result_fold_path="../results/",orig_data_path="../data/extracted/embryo_dataset/",orig_data_annot_folder="../data/extracted/embryo_dataset_annotations/",split_file_path="split.json",debug=False,num_classes=16,max_dataset_size=5000,batch_size=50,num_workers=0):
     """
     Compute metrics for synthetic image data using a specified deep learning model.
 

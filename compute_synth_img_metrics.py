@@ -10,15 +10,14 @@ ALLOWED_EXT = ["jpg","jpeg"]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_data_path", type=str,help="Path to the original data. Mandatory")
+    parser.add_argument("--orig_data_path", type=str,help="Path to the original data.",default="../data/extracted/embryo_dataset")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
-    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.")
-    parser.add_argument("--result_fold_path",type=str)
-    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.")
+    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.",default="../data/extracted/embryo_dataset_annotations/")
+    parser.add_argument("--result_fold_path",type=str,default="../results/")
+    parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.",default="split.json")
 
     parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
-    parser.add_argument("--model_architecture",type=str)
-
+    parser.add_argument("--model_architecture",type=str,default="resnet50")
 
     parser.add_argument("--debug",action="store_true",help="Debug mode. Only uses the first dimensions of the features and only runs a few batches.")
     parser.add_argument("--batch_size",type=int,default=50)
@@ -28,7 +27,7 @@ def main():
 
     args = parser.parse_args()
 
-    compute_synth_img_metrics(args.model_architecture,args.result_fold_path,args.model_weights_path,args.debug,args.num_classes,args.synth_data_path,args.orig_data_path,args.orig_data_annot_folder,args.split_file_path,args.max_dataset_size,args.batch_size,args.num_workers)
+    compute_synth_img_metrics(args.model_weights_path,args.synth_data_path,args.model_architecture,args.result_fold_path,args.orig_data_path,args.orig_data_annot_folder,args.split_file_path,args.debug,args.num_classes,args.max_dataset_size,args.batch_size,args.num_workers)
 
 if __name__ == "__main__":
     main()
