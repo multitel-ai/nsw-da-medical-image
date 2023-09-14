@@ -1,19 +1,17 @@
+from pathlib import Path
+import glob 
+import json
 
 import torch
 import torchvision.models as models
 from torch.utils.data import DataLoader
 import numpy as np
-import os
 import scipy.linalg as linalg
-from PIL import Image
-import glob 
-import json
+from PIL import Image,ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from nsw_da_medical_image.dataset_util import enums
 from nsw_da_medical_image.classifier.utils import get_test_transforms
-
-from PIL import ImageFile
-ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 ALLOWED_EXT = ["jpg","jpeg"]
 
@@ -88,8 +86,12 @@ def get_img_ind(img_path):
     >>> index = get_img_ind(img_path)
     >>> print(index)
     42
-    """
-    return int(os.path.splitext(os.path.basename(img_path))[0].split("RUN")[1])
+    """     
+    img_path = Path(img_path)
+    img_name = img_path.stem
+    index_str = img_name.split("RUN")[1]
+    index = int(index_str)
+    return index
 
 def get_dataset_name(dataset_path):
     if dataset_path.endswith("/"):
@@ -121,13 +123,13 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
 
     found_images = []
     for ext in ALLOWED_EXT:
-        found_images += glob.glob(os.path.join(root,"*."+ext))
+        found_images += glob.glob(str(root / f"*.{ext}"))
 
     all_labels_list = [phase.label for phase in list(enums.Phase)]
 
     if not is_orig_data:
    
-        with open(os.path.join(root,"metadata.json"),"r") as f:
+        with open(root / "metadata.json","r") as f:
             metadata = json.load(f)
 
         focal_plane = metadata["focal_plane"]
@@ -136,12 +138,10 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
         
     else:
         
-        if root.endswith("/"):
-            root = root[:-1]
-        vid_name = root.split("/")[-1]
+        vid_name = root.name
 
-        annotation_path = os.path.join(orig_annot_folder,vid_name+"_phases.csv")
-        if os.path.exists(annotation_path):
+        annotation_path = orig_annot_folder / str(vid_name+"_phases.csv")
+        if annotation_path.exists():
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
             for phase in phases:
@@ -186,10 +186,13 @@ class OrigImageFolder():
     
         found_images = []
         labels = np.array([])
-        folds = glob.glob(os.path.join(root,"*/"))
+        folds = glob.glob(str(root / "*/"))
+        
+
         for fold in folds:
-            vid_name = fold.split("/")[-2]
+            vid_name = fold.split("/")[-1] 
             if vid_name in split_dic["test"]:
+                fold = Path(fold)
                 found_image_fold,_,labels_fold = get_imgs(fold,True,orig_annot_folder)
                 found_images += found_image_fold
                 labels = np.concatenate((labels,labels_fold),axis=0)
@@ -227,8 +230,7 @@ class SynthImageFolder():
         
         found_images = []
         labels = np.array([])
-        folds = glob.glob(os.path.join(root,"*/"))
-        #for fold in folds:
+
         found_images,_,labels = get_imgs(root,False)
 
         #Labels contains the same value repeated as many times as there are images
@@ -357,9 +359,9 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
 
     assert model_architecture in ["densenet121","resnet50"]
 
-
-    if not os.path.exists(result_fold_path):
-        os.makedirs(result_fold_path)
+    result_fold_path = Path(result_fold_path)
+    if not result_fold_path.exists():
+        result_fold_path.mkdir(parents=True)
 
     cuda = torch.cuda.is_available()
     torch.set_grad_enabled(False)
@@ -377,12 +379,13 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         weights = torch.load(model_weights_path,map_location=device)
         model.load_state_dict(weights)
-        model_name = os.path.splitext(os.path.basename(model_weights_path))[0]
+        model_name = Path(model_weights_path).stem
+
     model.eval()
     if cuda:
         model = model.cuda()
   
-    #add a hook on the last feature layer of the densenet121 model 
+    #add a hook on the last feature layer of the model 
     #to get the feature vector
     vector_list = []
     def save_output(_,features,__):
@@ -400,23 +403,29 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
 
     stat_dic = {}
 
+    synth_data_path = Path(synth_data_path)
+    orig_data_path = Path(orig_data_path)
+    orig_data_annot_folder = Path(orig_data_annot_folder)
+    split_file_path = Path(split_file_path)
+
     synth_dataset = SynthImageFolder(synth_data_path,get_test_transforms(),debug=debug)
     dataset_label = synth_dataset.get_label()
     orig_dataset = OrigImageFolder(orig_data_path,get_test_transforms(),orig_data_annot_folder,split_file_path,dataset_label=dataset_label,max_size=max_dataset_size,debug=debug)
 
     for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[orig_data_path,synth_data_path]):
 
-        dataset_name = get_dataset_name(data_dir_path)
-        mu_path = result_fold_path+f"/mu_{dataset_name}_{model_name}.npy"
-        sigma_path = result_fold_path+f"/std_{dataset_name}_{model_name}.npy"
-        entropy_path = result_fold_path+f"/entropy_{dataset_name}_{model_name}.npy"
-        accuracy_path = result_fold_path+f"/accuracy_{dataset_name}_{model_name}.npy"
+        dataset_name = data_dir_path.name
+
+        mu_path = result_fold_path / f"/mu_{dataset_name}_{model_name}.npy"
+        sigma_path = result_fold_path / f"/std_{dataset_name}_{model_name}.npy"
+        entropy_path = result_fold_path / f"/entropy_{dataset_name}_{model_name}.npy"
+        accuracy_path = result_fold_path / f"/accuracy_{dataset_name}_{model_name}.npy"
 
         logit_list = []
         vector_list = []
         labels_list = []
 
-        if not os.path.exists(mu_path) or not os.path.exists(entropy_path):
+        if not mu_path.exists() or not entropy_path.exists():
 
             dataloader = DataLoader(dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers)
 
@@ -435,7 +444,6 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
             mu = np.mean(vectors, axis=0)
             std = np.cov(vectors, rowvar=False)
 
-            #Saves mu and std in npy files 
             np.save(mu_path,mu)
             np.save(sigma_path,std)
 
@@ -457,8 +465,8 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
 
         stat_dic[dataset_name] = {"mu":mu,"std":std,"entropy":entropy,"accuracy":accuracy}
 
-    orig_dataset = get_dataset_name(orig_data_path)
-    synth_dataset = get_dataset_name(synth_data_path)
+    orig_dataset = orig_data_path.name
+    synth_dataset = synth_data_path.name
 
     fid = calculate_frechet_distance(stat_dic[orig_dataset]["mu"],stat_dic[orig_dataset]["std"],stat_dic[synth_dataset]["mu"],stat_dic[synth_dataset]["std"])
     entropy_orig_data = stat_dic[orig_dataset]["entropy"]
@@ -467,10 +475,9 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
     accuracy_orig_data = stat_dic[orig_dataset]["accuracy"]
     accuracy_synth_data = stat_dic[synth_dataset]["accuracy"]
 
-    csv_path = result_fold_path+"/synth_img_metrics.csv"
+    csv_path = result_fold_path / "synth_img_metrics.csv"
 
-    #if csv does not exists, create it with header 
-    if not os.path.exists(csv_path):
+    if not csv_path.exists():
         with open(csv_path,"w") as f:
             f.write("model_name,orig_data,synth_data,label,entropy_orig,entropy_synth,accuracy_orig,accuracy_synth,fid\n")
 
