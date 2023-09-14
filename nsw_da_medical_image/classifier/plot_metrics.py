@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 import numpy as np
 
-def compare_metrics(directories, output_dir):
+from nsw_da_medical_image.dataset_util import enums
+
+def compare_metrics(directories, output_dir,fontsize=30):
     # Create output directory if it does not exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -42,13 +44,28 @@ def compare_metrics(directories, output_dir):
     plt.close()
     
     # 2. Line plot for class-wise F1 Score
-    plt.figure(figsize=(10, 6))
-    for model in directories:
-        plt.plot(all_metrics[model]['class_metrics']['F1_Score'], label=f"{model} F1 Score")
-    plt.xlabel('Class')
-    plt.ylabel('F1 Score')
-    plt.title('Comparing F1 Score Across Classes and Models')
-    plt.legend()
+    plt.figure(figsize=(13, 6))
+    labels = [phase.label.replace("t","s") for phase in list(enums.Phase)]
+    xticks_pos = np.arange(len(labels))
+    yticks_pos = np.arange(5)
+    yticks_pos = yticks_pos/len(yticks_pos)
+    if len(directories) == 1:
+        #We take advantage of the fact that there's only one model to use bar instead of line for clearer viz
+        #This is tailored for the NSW pitch presentation
+        model = directories[0]
+        plt.bar(xticks_pos,all_metrics[model]['class_metrics']['F1_Score'],0.8,label=f"{model} F1 Score")
+        plt.title('F1 Score Across Classes',fontsize=fontsize)
+    else:
+        for model in directories:
+            plt.plot(all_metrics[model]['class_metrics']['F1_Score'], label=f"{model} F1 Score")
+        plt.title('Comparing F1 Score Across Classes and Models',fontsize=fontsize)
+        plt.legend()
+        plt.xlabel('Class',fontsize=fontsize)
+
+    plt.ylabel('F1 Score',fontsize=fontsize)
+    plt.xticks(xticks_pos,labels,fontsize=fontsize,rotation=45)
+    plt.yticks(yticks_pos,yticks_pos,fontsize=fontsize)
+    
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'f1_score_comparison.png'))
     plt.close()
