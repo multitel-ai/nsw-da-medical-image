@@ -172,91 +172,78 @@ def getitem(idx,img_list,transform,labels):
         img = np.repeat(img,3,0)
     return img,labels[idx]
 
-class OrigImageFolder():
-    
-    def __init__(self,root,transform,orig_annot_folder,split_file_path,dataset_label,max_size=None,debug=False):
+def load_original_dataset(root,annot_folder,split_file_path,dataset_label,max_size=None,debug=False):
 
-        self.root = root
+    #Load the json file 
+    with open(split_file_path) as f:
+        split_dic = json.load(f)    
+
+    found_images = []
+    labels = np.array([])
+    folds = glob.glob(str(root / "*/"))
+    
+    for fold in folds:
+        vid_name = fold.split("/")[-1] 
+        if vid_name in split_dic["test"]:
+            fold = Path(fold)
+            found_image_fold,_,labels_fold = get_imgs(fold,True,annot_folder)
+            found_images += found_image_fold
+            labels = np.concatenate((labels,labels_fold),axis=0)
+        
+    img_list = np.array(found_images)
+
+    label_mask = labels == dataset_label
+    img_list = img_list[label_mask]
+    labels = labels[label_mask]
+    
+    if max_size is not None and len(img_list) > max_size:
+        img_list,labels = shorten_dataset(img_list,labels,max_size)
+
+    assert len(labels) == len(img_list)
+    print("Using",len(labels),"original images from label",dataset_label)
+
+    if debug:
+        with open("img_and_labels_orig.txt","w") as f:
+            for path,label in zip(img_list,labels):
+                print(path,label,file=f)
+
+    return img_list,labels
+           
+def load_synthetic_data(root,debug=False):
+    img_list,_,labels = get_imgs(root,False)
+
+    #Labels contains the same value repeated as many times as there are images
+    #In a synthetic dataset, all images have the same label
+    dataset_label = labels[0]
+
+    assert len(labels) == len(img_list)
+    print("Using",len(labels),"synthetic images from label",dataset_label)
+
+    if debug:
+        with open("img_and_labels_synth.txt","w") as f:
+            for path,label in zip(img_list,labels):
+                print(path,label,file=f)
+        
+    return img_list,labels
+        
+class BasicImageDataset():
+
+    def __init__(self,transform,img_list,labels):
+
         self.transform = transform
-        self.dataset_label = dataset_label
+        self.img_list,self.labels = img_list,labels
 
-        #Load the json file 
-        with open(split_file_path) as f:
-            split_dic = json.load(f)    
-    
-        found_images = []
-        labels = np.array([])
-        folds = glob.glob(str(root / "*/"))
-        
-
-        for fold in folds:
-            vid_name = fold.split("/")[-1] 
-            if vid_name in split_dic["test"]:
-                fold = Path(fold)
-                found_image_fold,_,labels_fold = get_imgs(fold,True,orig_annot_folder)
-                found_images += found_image_fold
-                labels = np.concatenate((labels,labels_fold),axis=0)
-            
-        self.labels = labels
-        self.img_list = np.array(found_images)
-
-        label_mask = self.labels == dataset_label
-        self.img_list = self.img_list[label_mask]
-        self.labels = self.labels[label_mask]
-        
-        if max_size is not None and len(self.img_list) > max_size:
-            self.img_list,self.labels = shorten_dataset(self.img_list,self.labels,max_size)
-
-        assert len(self.labels) == len(self.img_list)
-        print("Using",len(self.labels),"original images from label",dataset_label)
-
-        if debug:
-            with open("img_and_labels_orig.txt","w") as f:
-                for path,label in zip(self.img_list,labels):
-                    print(path,label,file=f)
-                    
     def __len__(self):
         return len(self.img_list)
 
     def __getitem__(self,idx):
-        return getitem(idx,self.img_list,self.transform,self.labels)
-
-class SynthImageFolder():
-
-    def __init__(self,root,transform,debug=False):
-
-        self.root = root
-        self.transform = transform
-        
-        found_images = []
-        labels = np.array([])
-
-        found_images,_,labels = get_imgs(root,False)
-
-        #Labels contains the same value repeated as many times as there are images
-        #In a synthetic dataset, all images have the same label
-        self.dataset_label = labels[0]
-
-        self.labels = labels
-        self.img_list = found_images
-
-        assert len(self.labels) == len(self.img_list)
-        print("Using",len(self.labels),"synthetic images from label",self.dataset_label)
-
-        if debug:
-            with open("img_and_labels_synth.txt","w") as f:
-                for path,label in zip(self.img_list,labels):
-                    print(path,label,file=f)
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def get_label(self):
-        return self.dataset_label
-
-    def __getitem__(self,idx):
-        return getitem(idx,self.img_list,self.transform,self.labels)
-
+        img = Image.open(self.img_list[idx])
+        if self.transform is not None:
+            img = self.transform(img)
+        if img.shape[0] == 1:
+            img = np.repeat(img,3,0)
+        return img,self.labels[idx]
+    
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     #https://github.com/mseitzer/pytorch-fid/blob/master/src/pytorch_fid/fid_score.py#L152
     """Numpy implementation of the Frechet Distance.
@@ -393,7 +380,7 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
 
         if debug:
             features = features[:,:10]
-        
+
         vector_list.append(features[0].cpu())
 
     if model_architecture == "densenet121":        
@@ -408,18 +395,21 @@ def compute_synth_img_metrics(model_weights_path,synth_data_path,model_architect
     orig_data_annot_folder = Path(orig_data_annot_folder)
     split_file_path = Path(split_file_path)
 
-    synth_dataset = SynthImageFolder(synth_data_path,get_test_transforms(),debug=debug)
-    dataset_label = synth_dataset.get_label()
-    orig_dataset = OrigImageFolder(orig_data_path,get_test_transforms(),orig_data_annot_folder,split_file_path,dataset_label=dataset_label,max_size=max_dataset_size,debug=debug)
+    img_list,labels = load_synthetic_data(synth_data_path,debug)
+    synth_dataset = BasicImageDataset(get_test_transforms(),img_list,labels)
+    
+    dataset_label = labels[0]
+    img_list,labels = load_original_dataset(orig_data_path,orig_data_annot_folder,split_file_path,dataset_label,max_dataset_size,debug)
+    orig_dataset = BasicImageDataset(get_test_transforms(),img_list,labels)
 
     for dataset,data_dir_path in zip([orig_dataset,synth_dataset],[orig_data_path,synth_data_path]):
 
         dataset_name = data_dir_path.name
 
-        mu_path = result_fold_path / f"/mu_{dataset_name}_{model_name}.npy"
-        sigma_path = result_fold_path / f"/std_{dataset_name}_{model_name}.npy"
-        entropy_path = result_fold_path / f"/entropy_{dataset_name}_{model_name}.npy"
-        accuracy_path = result_fold_path / f"/accuracy_{dataset_name}_{model_name}.npy"
+        mu_path = result_fold_path / f"mu_{dataset_name}_{model_name}.npy"
+        sigma_path = result_fold_path / f"std_{dataset_name}_{model_name}.npy"
+        entropy_path = result_fold_path / f"entropy_{dataset_name}_{model_name}.npy"
+        accuracy_path = result_fold_path / f"accuracy_{dataset_name}_{model_name}.npy"
 
         logit_list = []
         vector_list = []
