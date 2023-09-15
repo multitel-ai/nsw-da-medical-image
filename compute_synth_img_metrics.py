@@ -10,10 +10,10 @@ ALLOWED_EXT = ["jpg","jpeg"]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--orig_data_path", type=str,help="Path to the original data.",default="../data/extracted/embryo_dataset")
+    parser.add_argument("--orig_data_path", type=str,help="Path to the original data.",default="/App/data/extracted/embryo_dataset")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
-    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.",default="../data/extracted/embryo_dataset_annotations/")
-    parser.add_argument("--result_fold_path",type=str,default="../results/")
+    parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.",default="/App/data/extracted/embryo_dataset_annotations/")
+    parser.add_argument("--result_fold_path",type=str,default="/App/results/")
     parser.add_argument("--split_file_path",type=str,help="Path to the split.json file to only run inference on the test data.",default="split.json")
 
     parser.add_argument("--model_weights_path", type=str,help="Path to the model. Mandatory except in debug mode, in which case imagenet weights are used.")    
