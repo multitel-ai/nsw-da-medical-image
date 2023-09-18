@@ -2,9 +2,6 @@ import argparse
 
 from nsw_da_medical_image.synth_img_metrics import compute_synth_img_metrics
 
-from PIL import ImageFile
-ImageFile.LOAD_TRUNCATED_IMAGES = True
-
 ALLOWED_EXT = ["jpg","jpeg"]
 
 
