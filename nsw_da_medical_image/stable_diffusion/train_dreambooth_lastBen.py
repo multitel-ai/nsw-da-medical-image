@@ -128,12 +128,16 @@ def log_validation(
     return images
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Simple example of a training script.")
+def get_parser(parser: argparse.ArgumentParser | None = None):
+    if parser is None:
+        parser = argparse.ArgumentParser(
+            description="Finetune Stable Diffusion model",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+
     parser.add_argument(
         "--pretrained_model_name_or_path",
         type=str,
-        default=None,
         required=True,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
@@ -141,7 +145,6 @@ def parse_args():
         "--revision",
         type=str,
         default=None,
-        required=False,
         help=(
             "Revision of pretrained model identifier from huggingface.co/models. Trainable model components should be"
             " float32 precision."
@@ -161,7 +164,6 @@ def parse_args():
     parser.add_argument(
         "--instance_data_dir",
         type=str,
-        default=None,
         required=True,
         help="A folder containing the training data of instance images.",
     )
@@ -169,7 +171,6 @@ def parse_args():
         "--class_data_dir",
         type=str,
         default=None,
-        required=False,
         help="A folder containing the training data of class images.",
     )
     parser.add_argument(
@@ -181,16 +182,20 @@ def parse_args():
     parser.add_argument(
         "--class_prompt",
         type=str,
-        default="",
+        required=True,
         help="The prompt to specify images in the same class as provided instance images.",
     )
     parser.add_argument(
         "--with_prior_preservation",
-        default=False,
         action="store_true",
         help="Flag to add prior preservation loss.",
     )
-    parser.add_argument("--prior_loss_weight", type=float, default=1.0, help="The weight of prior preservation loss.")
+    parser.add_argument(
+        "--prior_loss_weight",
+        type=float,
+        default=1.0,
+        help="The weight of prior preservation loss.",
+    )
     parser.add_argument(
         "--num_class_images",
         type=int,
@@ -226,34 +231,44 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="",  # TODO is this a good default ? We don't want results in the current directory.
+        required=True,
         help="The output directory where the model predictions and checkpoints will be written.",
     )
-    parser.add_argument("--seed", type=int, default=10, help="A seed for reproducible training.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=10,
+        help="A seed for reproducible training.",
+    )
     parser.add_argument(
         "--resolution",
         type=int,
         default=512,
         help=(
-            "The resolution for input images, all the images in the train/validation dataset will be resized to this"
-            " resolution"
+            "The resolution for input images, all the images in the train/validation"
+            "dataset will be resized to this resolution"
         ),
     )
     parser.add_argument(
-        "--center_crop", action="store_true", help="Whether to center crop images before resizing to resolution"
+        "--center_crop",
+        action="store_true",
+        help="Whether to center crop images before resizing to resolution",
     )
-    parser.add_argument("--train_text_encoder", action="store_true", help="Whether to train the text encoder")
+    parser.add_argument(
+        "--train_text_encoder",
+        action="store_true",
+        help="Whether to train the text encoder",
+    )
     parser.add_argument(
         "--train_batch_size", type=int, default=4, help="Batch size (per device) for the training dataloader."
     )
     parser.add_argument(
         "--sample_batch_size", type=int, default=4, help="Batch size (per device) for sampling images."
     )
-    parser.add_argument("--num_train_epochs", type=int, default=1)
+    parser.add_argument("--num_train_epochs", type=int, default=1, help="Number of training epochs (overridden by --max_train_steps)")
     parser.add_argument(
         "--max_train_steps",
         type=int,
-        default=None,
         help="Total number of training steps to perform.  If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
@@ -276,7 +291,6 @@ def parse_args():
     parser.add_argument(
         "--scale_lr",
         action="store_true",
-        default=False,
         help="Scale the learning rate by the number of GPUs, gradient accumulation steps, and batch size.",
     )
     parser.add_argument(
@@ -298,27 +312,10 @@ def parse_args():
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="The beta2 parameter for the Adam optimizer.")
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2, help="Weight decay to use.")
     parser.add_argument("--adam_epsilon", type=float, default=1e-08, help="Epsilon value for the Adam optimizer")
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
-    parser.add_argument("--hub_token", type=str, default=None, help="The token to use to push to the Model Hub.")
-    parser.add_argument(
-        "--hub_model_id",
-        type=str,
-        default=None,
-        help="The name of the repository to keep in sync with the local `output_dir`.",
-    )
-    parser.add_argument(
-        "--logging_dir",
-        type=str,
-        default="logs",
-        help=(
-            "[TensorBoard](https://www.tensorflow.org/tensorboard) log directory. Will default to"
-            " *output_dir/runs/**CURRENT_DATETIME_HOSTNAME***."
-        ),
-    )
+    parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Max gradient norm.")
     parser.add_argument(
         "--validation_prompt",
         type=str,
-        default=None,
         help="A prompt that is used during validation to verify that the model is learning.",
     )
     parser.add_argument(
@@ -339,8 +336,6 @@ def parse_args():
     )
     parser.add_argument(
         "--validation_images",
-        required=False,
-        default=None,
         nargs="+",
         help="Optional set of images to use for validation. Used when the target pipeline takes an initial image as input such as when training image variation or superresolution.",
     )
@@ -367,21 +362,19 @@ def parse_args():
         "--save_n_steps",
         type=int,
         default=1,
-        help=("Save the model every n global_steps"),
+        help="Save the model every n global_steps",
     )
-    
-    
+
     parser.add_argument(
         "--save_starting_step",
         type=int,
         default=1,
-        help=("The step from which it starts saving intermediary checkpoints"),
+        help="The step from which it starts saving intermediary checkpoints",
     )
 
     parser.add_argument(
         "--checkpoints_total_limit",
         type=int,
-        default=None,
         help=(
             "Max number of checkpoints to store. Passed as `total_limit` to the `Accelerator` `ProjectConfiguration`."
             " See Accelerator::save_state https://huggingface.co/docs/accelerate/package_reference/accelerator#accelerate.Accelerator.save_state"
@@ -393,12 +386,13 @@ def parse_args():
         "--report_to",
         type=str,
         default="wandb",
+        choices=["wandb"],
         help=(
-            'The integration to report the results and logs to. Supported platforms are `"tensorboard"`'
-            ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
-            ),
+            'The integration to report the results and logs to. Supported platforms are `"wandb"`'
+            ' (default)'
+        ),
     )
-    
+
     parser.add_argument(
         "--stop_text_encoder_training",
         type=int,
@@ -409,85 +403,78 @@ def parse_args():
     parser.add_argument(
         "--wandb_project",
         type=str,
-        default="",
+        required=True,
         help="wandb project name",
     )
 
     parser.add_argument(
         "--wandb_run_name",
         type=str,
-        default="",
+        required=True,
         help="wandb run name",
-    )   
-
-
+    )
 
     parser.add_argument(
         "--image_captions_filename",
         action="store_true",
         help="Get captions from filename",
-    )    
-    
-    
+    )
+
     parser.add_argument(
         "--dump_only_text_encoder",
         action="store_true",
-        default=False,        
         help="Dump only text-encoder",
     )
 
     parser.add_argument(
         "--train_only_unet",
         action="store_true",
-        default=False,        
         help="Train only the unet",
     )
-    
+
     parser.add_argument(
         "--train_only_text_encoder",
         action="store_true",
-        default=False,        
         help="Train only the text-encoder",
     )
-    
+
     parser.add_argument(
         "--Style",
         action="store_true",
-        default=False,        
         help="Further reduce overfitting",
-    )    
-    
+    )
+
     parser.add_argument(
         "--Session_dir",
         type=str,
-        default="",     
+        required=True,
         help="Current session directory",
-    )    
+    )
 
     parser.add_argument(
         "--external_captions",
         action="store_true",
-        default=False,        
         help="Use captions stored in a txt file",
-    )    
-    
+    )
+
     parser.add_argument(
         "--captions_dir",
         type=str,
-        default="",
         help="The folder where captions files are stored",
-    )       
+    )
 
     parser.add_argument(
         "--offset_noise",
         action="store_true",
-        default=False,        
         help="Offset Noise",
     )
 
-
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
 
+    return parser
+
+
+def parse_args(parser: argparse.ArgumentParser):
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
@@ -501,6 +488,10 @@ def parse_args():
             raise ValueError("You must specify a data directory for class images.")
         if args.class_prompt is None:
             raise ValueError("You must specify prompt for class images.")
+
+    if getattr(args, "image_captions_filename", False):
+        if getattr(args, "captions_dir", None) is None:
+            raise ValueError("'captions_dir' is required if 'image_captions_filename' is given")
 
     if not args.output_dir:
         raise ValueError("a valid output dir should be given")
@@ -528,7 +519,6 @@ class DreamBoothDataset(Dataset):
         self.size = size
         self.center_crop = center_crop
         self.tokenizer = tokenizer
-        self.image_captions_filename = None
 
         self.instance_data_root = Path(instance_data_root)
         if not self.instance_data_root.exists():
@@ -539,9 +529,11 @@ class DreamBoothDataset(Dataset):
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
 
-        if args.image_captions_filename:
-            self.image_captions_filename = True
-        
+        self.image_captions_filename = getattr(args, "image_captions_filename", False)
+        self.external_captions = getattr(args, "external_captions", False)
+        self.captions_dir = getattr(args, "captions_dir", None)
+        self.Style = getattr(args, "Style", False)
+
         if class_data_root is not None:
             self.class_data_root = Path(class_data_root)
             self.class_data_root.mkdir(parents=True, exist_ok=True)
@@ -564,40 +556,39 @@ class DreamBoothDataset(Dataset):
     def __len__(self):
         return self._length
 
-    def __getitem__(self, index, args=parse_args()):
+    def __getitem__(self, index):
         example = {}
         path = self.instance_images_path[index % self.num_instance_images]
         instance_image = Image.open(path)
         if not instance_image.mode == "RGB":
             instance_image = instance_image.convert("RGB")
-            
+
         instance_prompt = self.instance_prompt
-        
+
         if self.image_captions_filename:
             filename = Path(path).stem
-            
-            pt=''.join([i for i in filename if not i.isdigit()])
-            pt=pt.replace("_"," ")
-            pt=pt.replace("(","")
-            pt=pt.replace(")","")
-            pt=pt.replace("-","")
-            pt=pt.replace("conceptimagedb","")  
-            
-            if args.external_captions:
-              cptpth=os.path.join(args.captions_dir, filename+'.txt')
-              if os.path.exists(cptpth):
-                with open(cptpth, "r") as f:
-                   instance_prompt=pt+' '+f.read()
-              else:
-                instance_prompt=pt
-            else:
-                if args.Style:
-                  instance_prompt = ""
-                else:
-                  instance_prompt = pt
-            sys.stdout.write(" [0;32m" +instance_prompt[:45]+" [0m")
-            sys.stdout.flush()
 
+            pt = ''.join([i for i in filename if not i.isdigit()])
+            pt = pt.replace("_", " ")
+            pt = pt.replace("(", "")
+            pt = pt.replace(")", "")
+            pt = pt.replace("-", "")
+            pt = pt.replace("conceptimagedb", "")
+
+            if self.external_captions:
+                cptpth = os.path.join(self.captions_dir, filename + '.txt')
+                if os.path.exists(cptpth):
+                    with open(cptpth, "r") as f:
+                        instance_prompt = pt + ' ' + f.read()
+                else:
+                    instance_prompt = pt
+            else:
+                if self.Style:
+                    instance_prompt = ""
+                else:
+                    instance_prompt = pt
+            sys.stdout.write(" [0;32m" + instance_prompt[:45] + " [0m")
+            sys.stdout.flush()
 
         example["instance_images"] = self.image_transforms(instance_image)
         example["instance_prompt_ids"] = self.tokenizer(
@@ -620,7 +611,6 @@ class DreamBoothDataset(Dataset):
             ).input_ids
 
         return example
-
 
 
 class PromptDataset(Dataset):
@@ -651,11 +641,10 @@ def get_full_repo_name(model_id: str, organization: Optional[str] = None, token:
 
 
 def main():
-    args = parse_args()
-    logging_dir = Path(args.output_dir, args.logging_dir)
+    args = parse_args(get_parser())
     i=args.save_starting_step
 
-    accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=str(logging_dir))
+    accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir)
 
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
