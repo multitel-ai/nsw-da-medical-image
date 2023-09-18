@@ -1,15 +1,11 @@
 import torch
-import os 
-import argparse, sys
+import os
+import argparse
 from pathlib import Path
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
 
 from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler, UNet2DConditionModel
-
-__location__ = os.path.realpath(
-    os.path.join(os.getcwd(), os.path.dirname(__file__)))
-
 
 
 def main(model_id, n_iter, version, prompt, output_dir):
@@ -40,11 +36,11 @@ def main(model_id, n_iter, version, prompt, output_dir):
     pipe = DiffusionPipeline.from_pretrained(model_id, unet=accelerator.unwrap_model(unet),torch_dtype=torch_dtype)
     pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to("cuda")
-
    
     for i in range(n_iter):
         image = pipe(prompt).images[0]
         image.save(os.path.join(output_folder_run,f"embryo{i}.png"))
+
 
 if __name__ == '__main__':
 

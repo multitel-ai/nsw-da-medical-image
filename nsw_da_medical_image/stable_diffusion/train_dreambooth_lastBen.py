@@ -8,11 +8,13 @@ import subprocess
 import sys
 import copy
 import importlib
+import shutil
 
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
-from torch.utils.data import Dataset
+from torch.utils.data.dataloader import DataLoader
+from torch.utils.data.dataset import Dataset
 
 from accelerate import Accelerator
 from accelerate.logging import get_logger
@@ -25,10 +27,9 @@ from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
-from Conv import *
+import wandb
 
-if is_wandb_available():
-    import wandb
+from .Conv import save_stable_diffusion_checkpoint
 
 
 logger = get_logger(__name__)
@@ -225,7 +226,7 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="",
+        default="",  # TODO is this a good default ? We don't want results in the current directory.
         help="The output directory where the model predictions and checkpoints will be written.",
     )
     parser.add_argument("--seed", type=int, default=10, help="A seed for reproducible training.")
@@ -501,6 +502,9 @@ def parse_args():
         if args.class_prompt is None:
             raise ValueError("You must specify prompt for class images.")
 
+    if not args.output_dir:
+        raise ValueError("a valid output dir should be given")
+
     return args
 
 
@@ -651,7 +655,7 @@ def main():
     logging_dir = Path(args.output_dir, args.logging_dir)
     i=args.save_starting_step
 
-    accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
+    accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=str(logging_dir))
 
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -695,7 +699,7 @@ def main():
             logger.info(f"Number of class images to sample: {num_new_images}.")
 
             sample_dataset = PromptDataset(args.class_prompt, num_new_images)
-            sample_dataloader = torch.utils.data.DataLoader(sample_dataset, batch_size=args.sample_batch_size)
+            sample_dataloader = DataLoader(sample_dataset, batch_size=args.sample_batch_size)
 
             sample_dataloader = accelerator.prepare(sample_dataloader)
             pipeline.to(accelerator.device)
@@ -811,7 +815,7 @@ def main():
         }
         return batch
 
-    train_dataloader = torch.utils.data.DataLoader(
+    train_dataloader = DataLoader(
         train_dataset, batch_size=args.train_batch_size, shuffle=True, collate_fn=collate_fn
     )
 
@@ -864,11 +868,11 @@ def main():
         tracker_config = vars(copy.deepcopy(args))
         tracker_config.pop("validation_images")
         accelerator.init_trackers(args.wandb_project, config=tracker_config)
-        wandb.name=args.wandb_run_name,
         wandb.init(
             project=args.wandb_project,
             config=tracker_config, 
-            entity='trail23-medical-image-diffusion'
+            entity='trail23-medical-image-diffusion',
+            name=args.wandb_run_name,
         )
 
     def bar(prg):

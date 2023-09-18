@@ -189,3 +189,13 @@ python make_image_folder.py --dataset /App/data/extracted/ --split-file split.js
 ```sh
 python make_image_folder.py --dataset /App/data/extracted/ --split-file split.json --set eval --phases all --image-folder-parent /App/data/image-folders
 ```
+
+## Stable Diffusion Refactor
+
+The code has been refactored such that the shell script is now at the root directory. Here is an invocation inside the container :
+
+```sh
+cd code && ./finetune_unet.sh /App/data/image-folders/training-all-1vp/ 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 50 /App/models/stable_diffusion/phase-t2-sessions 500 200 20
+```
+
+The arguments still need some refactoring to be clearer and idealy we ditch the shell script all together to only keep a "simple" python script.
