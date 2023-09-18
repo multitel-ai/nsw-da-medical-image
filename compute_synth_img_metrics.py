@@ -9,7 +9,10 @@ ALLOWED_EXT = ["jpg","jpeg"]
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Compute metrics for synthetic image data using a specified deep learning model.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--orig_data_path", type=str,help="Path to the original data.",default="/App/data/extracted/embryo_dataset")
     parser.add_argument("--synth_data_path", type=str,help="Path to the synthetic data. Mandatory.")    
     parser.add_argument("--orig_data_annot_folder",type=str,help="Path to the folder containing the 'XXX_phases.csv' files.",default="/App/data/extracted/embryo_dataset_annotations/")

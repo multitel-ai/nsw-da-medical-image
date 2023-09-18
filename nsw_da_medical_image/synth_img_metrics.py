@@ -10,8 +10,8 @@ import scipy.linalg as linalg
 from PIL import Image,ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-from nsw_da_medical_image.dataset_util import enums
-from nsw_da_medical_image.classifier.utils import get_test_transforms
+from .dataset_util import enums
+from .classifier.utils import get_test_transforms
 
 ALLOWED_EXT = ["jpg","jpeg"]
 
