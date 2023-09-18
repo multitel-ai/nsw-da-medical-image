@@ -132,7 +132,7 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
         with open(root / "metadata.json","r") as f:
             metadata = json.load(f)
 
-        focal_plane = metadata["focal_plane"]
+        focal_plane = metadata["focal-plane"]
         label = all_labels_list.index(metadata["phase"])
         labels = np.array([label]*len(found_images)).astype("int")
         
