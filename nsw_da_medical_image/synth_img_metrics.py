@@ -125,15 +125,13 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
     for ext in ALLOWED_EXT:
         found_images += glob.glob(str(root / f"*.{ext}"))
 
-    all_labels_list = [phase.label for phase in list(enums.Phase)]
-
     if not is_orig_data:
    
         with open(root / "metadata.json","r") as f:
             metadata = json.load(f)
 
         focal_plane = metadata["focal-plane"]
-        label = all_labels_list.index(metadata["phase"])
+        label = enums.Phase(metadata["phase"]).idx()
         labels = np.array([label]*len(found_images)).astype("int")
         
     else:
@@ -145,7 +143,7 @@ def get_imgs(root,is_orig_data,orig_annot_folder=None):
             phases = np.genfromtxt(annotation_path,dtype=str,delimiter=",")
             labels = np.zeros((int(phases[-1,-1])+1))-1
             for phase in phases:
-                labels[int(phase[1]):int(phase[2])+1] = all_labels_list.index(phase[0])
+                labels[int(phase[1]):int(phase[2])+1] = enums.Phase(phase[0]).idx()
             
             img_and_labels = []
             for img_path in found_images:
