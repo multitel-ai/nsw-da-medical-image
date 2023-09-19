@@ -144,7 +144,7 @@ def as_arg_list(args: argparse.Namespace):
         "--pretrained_model_name_or_path",
         "stabilityai/stable-diffusion-2-1-base",
         "--instance_data_dir",
-        args.image_folder,
+        args.image_folder + "/images",
         "--output_dir",
         args.save_model_to + "/" + args.wandb_run_name,
         "--with_prior_preservation",
@@ -182,7 +182,6 @@ def as_arg_list(args: argparse.Namespace):
         terms += [
             "--gradient_checkpointing",
             "--use_8bit_adam",
-            "--enable_xformers_memory_efficient_attention",
             "--set_grads_to_none",
         ]
 
