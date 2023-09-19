@@ -43,6 +43,12 @@ def get_parser():
         help="Run name in WandB",
     )
     parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default="trail23-medical-image-diffusion",
+        help="username or team name where to log the progress"
+    )
+    parser.add_argument(
         "--save-model-to",
         type=str,
         default="/App/models/stable_diffusion/",
@@ -132,6 +138,8 @@ def as_arg_list(args: argparse.Namespace):
         args.session_dir,
         "--wandb_run_name",
         args.wandb_run_name,
+        "--wandb_entity",
+        args.wandb_entity,
         "--train_only_unet",
         "--checkpointing_steps",
         str(args.checkpoint_steps),

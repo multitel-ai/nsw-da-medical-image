@@ -110,9 +110,6 @@ def log_validation(
             images.append(image)
 
     for tracker in accelerator.trackers:
-        if tracker.name == "tensorboard":
-            np_images = np.stack([np.asarray(img) for img in images])
-            tracker.writer.add_images("validation", np_images, global_step, dataformats="NHWC")
         if tracker.name == "wandb":
             tracker.log(
                 {
@@ -415,6 +412,13 @@ def get_parser(parser: argparse.ArgumentParser | None = None):
     )
 
     parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default="",
+        help="username or team name where to log the progress"
+    )
+
+    parser.add_argument(
         "--image_captions_filename",
         action="store_true",
         help="Get captions from filename",
@@ -495,6 +499,9 @@ def parse_args(parser: argparse.ArgumentParser):
 
     if not args.output_dir:
         raise ValueError("a valid output dir should be given")
+
+    if not args.wandb_entity:
+        args.wandb_entity = None  # use None instead of ""
 
     return args
 
@@ -853,16 +860,14 @@ def main():
 
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
-    if accelerator.is_main_process:
-        tracker_config = vars(copy.deepcopy(args))
-        tracker_config.pop("validation_images")
-        accelerator.init_trackers(args.wandb_project, config=tracker_config)
-        wandb.init(
-            project=args.wandb_project,
-            config=tracker_config, 
-            entity='trail23-medical-image-diffusion',
-            name=args.wandb_run_name,
-        )
+    tracker_config = vars(copy.deepcopy(args))
+    tracker_config.pop("validation_images")
+    accelerator.init_trackers(args.wandb_project, config=tracker_config, init_kwargs={
+        "wandb": {
+            "entity": args.wandb_entity,
+            "name": args.wandb_run_name
+        }
+    })
 
     def bar(prg):
        br='|'+'█' * prg + ' ' * (25-prg)+'|'
@@ -1034,12 +1039,11 @@ def main():
             pr=bar(fll)
             
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
-            if args.with_prior_preservation:
-                wandb.log({"loss": loss.detach().item(), "prior loss": prior_loss.detach().item(),"instance loss": instance_loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]})
-            else:
-                wandb.log({"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]})
             progress_bar.set_postfix(**logs)
             progress_bar.set_description_str("Progress:"+pr)
+            if args.with_prior_preservation:
+                logs["prior loss"] = prior_loss.detach().item()
+                logs["instance loss"] = instance_loss.detach().item()
             accelerator.log(logs, step=global_step)
 
             if global_step >= args.max_train_steps:
@@ -1077,7 +1081,6 @@ def main():
                  text_encoder=accelerator.unwrap_model(text_encoder),
              )
              pipeline.save_pretrained(args.output_dir)
-             wandb.finish()     
          else:
              if not os.path.exists(txt_dir):
                os.mkdir(txt_dir)
@@ -1087,7 +1090,6 @@ def main():
                  text_encoder=accelerator.unwrap_model(text_encoder),
              )
              pipeline.text_encoder.save_pretrained(txt_dir)
-             wandb.finish()
 
       elif args.train_only_unet:
         pipeline = StableDiffusionPipeline.from_pretrained(
@@ -1096,13 +1098,13 @@ def main():
             text_encoder=accelerator.unwrap_model(text_encoder),
         )
         pipeline.save_pretrained(args.output_dir)
-        wandb.finish()
 
         txt_dir=args.output_dir + "/text_encoder_trained"
         if os.path.exists(txt_dir):
            subprocess.call('rm -r '+txt_dir, shell=True)
                
             
+    # already calls wandb.finish()
     accelerator.end_training()
 
 if __name__ == "__main__":
