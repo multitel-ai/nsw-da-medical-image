@@ -202,6 +202,37 @@ def as_arg_list(args: argparse.Namespace):
     return terms
 
 
+def check_args(args: argparse.Namespace):
+    image_folder = pathlib.Path(args.image_folder)
+    if not image_folder.is_dir():
+        raise ValueError(f"{image_folder=} does not exist")
+    if count_images(args.image_folder) < 1:
+        raise ValueError(f"{args.image_folder} should not be empty")
+
+    if not args.instance_prompt:
+        raise ValueError(f"{args.instance_prompt=!r} is invalid (empty)")
+
+    class_data_dir_parent = pathlib.Path(args.class_data_dir_parent)
+    if not class_data_dir_parent.is_dir():
+        raise ValueError(f"{args.class_data_dir_parent} should be a valid directory")
+    
+
+    save_model_to = pathlib.Path(args.save_model_to)
+    if not save_model_to.exists():
+        if not save_model_to.parent.exists():
+            raise ValueError(f"parent of {save_model_to} should exist")
+        save_model_to.mkdir()
+
+    session_dir = pathlib.Path(args.session_dir)
+    if session_dir.exists():
+        if not session_dir.is_dir():
+            raise ValueError(f"session-dir={session_dir} should be a directory")
+    else:
+        if not session_dir.parent.exists():
+            raise ValueError(f"{session_dir.parent} should exist")
+        session_dir.mkdir()
+
+
 def main():
     dream_booth_parser = get_parser()
     dream_booth_args = dream_booth_parser.parse_args()
@@ -219,6 +250,9 @@ def main():
         "-m",
         "nsw_da_medical_image.stable_diffusion.train_dreambooth_lastBen",
     ]
+
+    # make sure all directories and such are right before starting to run the heavy code
+    check_args(dream_booth_args)
 
     accelerate_parser = launch.launch_command_parser()
     accelerate_cli = accelerate_args + as_arg_list(dream_booth_args)
