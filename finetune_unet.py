@@ -55,6 +55,12 @@ def get_parser():
         help="Where the saved model should be saved",
     )
     parser.add_argument(
+        "--class-data-dir-parent",
+        type=str,
+        default="/App/data/class_data_dir",
+        help="where the class data dir folder will be created"
+    )
+    parser.add_argument(
         "--session-dir",
         type=str,
         default="/App/models/stable_diffusion/phase-t2-sessions",
@@ -148,7 +154,7 @@ def as_arg_list(args: argparse.Namespace):
         "--save_n_steps",
         str(args.checkpoint_steps),
         "--class_data_dir",
-        "/tmp/class_data_dir-" + args.wandb_run_name,  # a temporary directory
+        args.class_data_dir_parent + "/" + args.wandb_run_name,
         "--pretrained_model_name_or_path",
         "stabilityai/stable-diffusion-2-1-base",
         "--instance_data_dir",
