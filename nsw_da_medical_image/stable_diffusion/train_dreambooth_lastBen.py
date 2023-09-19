@@ -4,7 +4,6 @@ import math
 import os
 from pathlib import Path
 from typing import Optional
-import subprocess
 import sys
 import copy
 import importlib
@@ -1107,9 +1106,8 @@ def main():
 
         txt_dir=args.output_dir + "/text_encoder_trained"
         if os.path.exists(txt_dir):
-           subprocess.call('rm -r '+txt_dir, shell=True)
-               
-            
+           shutil.rmtree(txt_dir)
+
     # already calls wandb.finish()
     accelerator.end_training()
 
