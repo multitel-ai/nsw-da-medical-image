@@ -63,6 +63,8 @@ data
 │   ├── embryo_dataset_grades.csv
 │   ├── embryo_dataset.tar.gz
 │   └── embryo_dataset_time_elapsed.tar.gz
+├── class_data_dir
+│   ├── ...
 ├── extracted
 │   ├── embryo_dataset
 │   ├── embryo_dataset_annotations
@@ -113,6 +115,8 @@ filename,label,phase
 8.jpeg,F+00_LV723-9_105,t2
 9.jpeg,F+00_PA214-5_150,t2
 ```
+
+The directory `/App/data/class_data_dir` is used by Stable Diffusion to generate a few images that will be used during training
 
 ### `extract_dataset.py`
 
@@ -192,10 +196,16 @@ python make_image_folder.py --dataset /App/data/extracted/ --split-file split.js
 
 ## Stable Diffusion Refactor
 
-The code has been refactored such that the shell script is now at the root directory. Here is an invocation inside the container :
+The code has been refactored such that the shell script is now at the root directory. Here is an invocation inside the container to train the model :
 
 ```sh
-cd code && ./finetune_unet.sh /App/data/image-folders/training-all-1vp/ 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 50 /App/models/stable_diffusion/phase-t2-sessions 500 200 20
+cd /App/code && python finetune_unet.py --image-folder /App/data/image-folders/training-all-1vp/ --instance-prompt "grayscale microscopic image of a human embryo at phase t2" --wandb-run-name "unet-t3"
 ```
 
-The arguments still need some refactoring to be clearer and idealy we ditch the shell script all together to only keep a "simple" python script.
+You may also add `--wandb-entity "your-user-name"` and `--wandb-project-name "your-project-name"` if you want the run to be saved elsewhere.
+
+To generate a synthetic dataset from the trained model, you may use this command :
+
+```sh
+cd /App/code && python make_synthetic_dataset.py --phase "t2" --dataset-name "new-synthetic-t2" --model-path /App/models/stable_diffusion/phase-t2
+```

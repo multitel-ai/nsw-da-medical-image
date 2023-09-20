@@ -215,7 +215,6 @@ def check_args(args: argparse.Namespace):
     class_data_dir_parent = pathlib.Path(args.class_data_dir_parent)
     if not class_data_dir_parent.is_dir():
         raise ValueError(f"{args.class_data_dir_parent} should be a valid directory")
-    
 
     save_model_to = pathlib.Path(args.save_model_to)
     if not save_model_to.exists():
