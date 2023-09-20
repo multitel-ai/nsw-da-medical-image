@@ -8,6 +8,28 @@ from accelerate.utils import ProjectConfiguration
 from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler, UNet2DConditionModel
 
 
+def generate(
+    model_path: Path,
+    prompt: str,
+    num_images: int,
+    image_destination: Path,
+):
+    "generate some images in image_destination using prompt"
+    cuda_available = torch.cuda.is_available()
+
+    # load the models from the config, no need for accelerate here
+    torch_dtype = torch.float16 if cuda_available else torch.float32
+    unet = UNet2DConditionModel.from_pretrained(model_path, subfolder="unet", torch_dtype=torch_dtype)
+    pipe = DiffusionPipeline.from_pretrained(model_path, unet=unet,torch_dtype=torch_dtype)
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    pipe = pipe.to("cuda" if cuda_available else "cpu")
+
+    for idx in range(num_images):
+        # batch-size is 1 so we only take the first image
+        image = pipe(prompt).images[0]
+        image.save(image_destination / f"img{idx}.jpg")
+
+
 def main(model_id, n_iter, version, prompt, output_dir):
 
     output_folder = os.path.join(output_dir,f"{version}")
@@ -17,11 +39,11 @@ def main(model_id, n_iter, version, prompt, output_dir):
     run_id = 0
 
     while os.path.isdir(os.path.join(output_folder, f"run_{run_id}")):
-        run_id += 1 
+        run_id += 1
 
     output_folder_run = os.path.join(output_folder, f"run_{run_id}" )
-    os.mkdir(output_folder_run) 
-    
+    os.mkdir(output_folder_run)
+
     logging_dir = Path(model_id, 'logs')
 
     accelerator_project_config = ProjectConfiguration(project_dir=model_id, logging_dir=logging_dir)
@@ -36,7 +58,7 @@ def main(model_id, n_iter, version, prompt, output_dir):
     pipe = DiffusionPipeline.from_pretrained(model_id, unet=accelerator.unwrap_model(unet),torch_dtype=torch_dtype)
     pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to("cuda")
-   
+
     for i in range(n_iter):
         image = pipe(prompt).images[0]
         image.save(os.path.join(output_folder_run,f"embryo{i}.png"))
@@ -44,7 +66,7 @@ def main(model_id, n_iter, version, prompt, output_dir):
 
 if __name__ == '__main__':
 
-    parser=argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
 
     parser.add_argument("--m", help="Model path",)
     parser.add_argument("--n", help="Num iterrations",)
@@ -52,8 +74,7 @@ if __name__ == '__main__':
     parser.add_argument("--p", help="Custom Prompt",)
     parser.add_argument('--o', help='path to where synthetic images would be saved')
 
-    
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     model = args.m
     m_version = args.v
