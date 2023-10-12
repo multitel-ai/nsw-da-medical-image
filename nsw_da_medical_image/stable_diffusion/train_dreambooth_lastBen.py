@@ -874,7 +874,7 @@ def main():
     def bar(prg):
        br='|'+'█' * prg + ' ' * (25-prg)+'|'
        return br
-
+    
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
@@ -886,9 +886,19 @@ def main():
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    print("***** Running training *****")
+    print(f"  Num examples = {len(train_dataset)}")
+    print(f"  Num batches each epoch = {len(train_dataloader)}")
+    print(f"  Num Epochs = {args.num_train_epochs}")
+    print(f"  Instantaneous batch size per device = {args.train_batch_size}")
+    print(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    print(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    print(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
+
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     global_step = 0
+    first_epoch = 0
 
         # Potentially load in the weights and states from a previous save
     if args.resume_from_checkpoint:
@@ -907,24 +917,26 @@ def main():
             )
             args.resume_from_checkpoint = None
         else:
-            accelerator.print(f"Resuming from checkpoint {path}")
+            accelerator.print(f"Resuming from {path}")
             accelerator.load_state(os.path.join(args.output_dir, path))
             global_step = int(path.split("-")[1])
 
-            resume_global_step = global_step * args.gradient_accumulation_steps
             first_epoch = global_step // num_update_steps_per_epoch
-            resume_step = resume_global_step % (num_update_steps_per_epoch * args.gradient_accumulation_steps)
+            print(f'first_epoch: {first_epoch}, global_step:{global_step}, num_update_steps_per_epoch:{num_update_steps_per_epoch}')
 
-    for epoch in range(args.num_train_epochs):
+
+    for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
         if args.train_text_encoder:
             text_encoder.train()
+     
         for step, batch in enumerate(train_dataloader):
 
-            if args.resume_from_checkpoint and args.num_train_epochs < first_epoch:
-                if step % args.gradient_accumulation_steps == 0:
-                    progress_bar.update(1)
-                continue
+            if args.resume_from_checkpoint and epoch == first_epoch and step == 0:
+                progress_bar.update(first_epoch * num_update_steps_per_epoch)
+                print(f'Here I am: first epoch {first_epoch}')
+                # if step % args.gradient_accumulation_steps == 0:
+                #     progress_bar.update(1)
             with accelerator.accumulate(unet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -989,6 +1001,7 @@ def main():
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
+                #print('We are doing something here')
                 progress_bar.update(1)
                 global_step += 1
                 
@@ -1013,9 +1026,9 @@ def main():
                                 for removing_checkpoint in removing_checkpoints:
                                     removing_checkpoint = os.path.join(args.output_dir, removing_checkpoint)
                                     shutil.rmtree(removing_checkpoint)
-
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_path)
+                        print(f'Checkpoint saved to {save_path}')
                         logger.info(f"Saved state to {save_path}")
 
                     images = []
@@ -1035,9 +1048,11 @@ def main():
                         )
 
 
-
             fll=round((global_step*100)/args.max_train_steps)
-            fll=round(fll/4)
+            
+            fll=round(fll/4) 
+            #+ round(args.num_train_epochs/first_epoch)
+
             pr=bar(fll)
             
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
@@ -1048,6 +1063,7 @@ def main():
             progress_bar.set_postfix(**logs)
             progress_bar.set_description_str("Progress:"+pr)
             accelerator.log(logs, step=global_step)
+            print(f'Accelerator global_step: {global_step}')
 
             if global_step >= args.max_train_steps:
                 break

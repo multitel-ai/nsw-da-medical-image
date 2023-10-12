@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Set environment variables
-model_version="$4"
-instance_dir_name="$1"
-instance_prompt="$2"
-export MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
-export INSTANCE_DIR="$instance_dir_name"
-export CLASS_DIR="path_to_class_images"
+model_version="${4}"
+instance_dir_name="${1}"
+instance_prompt="${2}"
+MODEL_NAME="stabilityai/stable-diffusion-2-1-base"
+INSTANCE_DIR="$instance_dir_name"
+CLASS_DIR="path_to_class_images"
 #export CAPTIONS_DIR="./text_captions"
-export OUTPUT_DIR="$5/$model_version"
-export WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen"
+OUTPUT_DIR="${5}/$model_version"
+WANDB_PROJECT_NAME="stable-diffusion-2-1-fine-tune-unet-lastBen"
 
 # Create OUTPUT_DIR if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
@@ -18,12 +18,12 @@ mkdir -p "$OUTPUT_DIR"
 # Run the Python code
 accelerate launch train_dreambooth_lastBen.py \
   --wandb_project="$WANDB_PROJECT_NAME" \
-  --Session_dir="$8" \
-  --wandb_run_name="$4" \
+  --Session_dir="${8}" \
+  --wandb_run_name="${4}" \
   --train_only_unet \
-  --checkpointing_steps=$9 \
-  --save_starting_step=$9 \
-  --save_n_steps=$9 \
+  --checkpointing_steps=${9} \
+  --save_starting_step=${9} \
+  --save_n_steps=${9} \
   --class_data_dir="$CLASS_DIR" \
   --pretrained_model_name_or_path="$MODEL_NAME" \
   --instance_data_dir="$INSTANCE_DIR" \
@@ -37,10 +37,12 @@ accelerate launch train_dreambooth_lastBen.py \
   --learning_rate=7e-6 \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
-  --num_class_images=200 \
-  --max_train_steps=$3 \
-  --num_validation_images=$11 \
-  --validation_steps=$10 \
+  --num_class_images=60 \
+  --max_train_steps=${3} \
+  --num_validation_images=${11} \
+  --validation_steps=${10}\
+  --resume_from_checkpoint="${12}" \
+  --checkpoints_total_limit=${13} \
   --validation_prompt="$instance_prompt"
 
     
@@ -59,7 +61,7 @@ fi
 
 python test_diffusion.py \
   --m="$OUTPUT_DIR" \
-  --n=$7 \
+  --n=${7} \
   --v="$model_version" \
   --p="$instance_prompt" \
-  --o="$6"
+  --o="${6}"
