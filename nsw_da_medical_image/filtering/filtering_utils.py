@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 import scipy.linalg as linalg
 
-ALLOWED_EXT = ["jpg","jpeg"]
+ALLOWED_EXT = ["jpg","jpeg","png"]
 
 LABELS_LIST = ["tPB2","tPNa","tPNf","t2","t3","t4","t5","t6","t7","t8","t9+","tM","tSB","tB","tEB","tHB"]
 
@@ -181,6 +181,9 @@ class SynthImageFolder():
 
     def get_label(self):
         return self.dataset_label
+    
+    def get_file(self,idx):
+        return self.img_list[idx]
 
     def __getitem__(self,idx):
         return getitem(idx,self.img_list,self.transform,self.labels)

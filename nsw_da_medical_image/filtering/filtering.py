@@ -53,21 +53,23 @@ def main():
     model.eval()
     if cuda:
         model = model.cuda()
-
+    
 
     #add a hook on the last feature layer of the densenet121 model 
     #to get the feature vector
     vector_list = []
 
     def save_output(_,features,__):
-
         features = features[0]
-
         if args.debug:
             features = features[:,:10]
-            
         for feature in features:
             vector_list.append(feature.cpu())
+            
+    if args.model_architecture == "densenet121":        
+        last_layer_hook = model.classifier.register_forward_hook(save_output)
+    else:
+        last_layer_hook = model.fc.register_forward_hook(save_output)
 
     synth_dataset = SynthImageFolder(args.synth_data_path,get_test_transforms(),debug=args.debug)
     dataset_label = synth_dataset.get_label()
@@ -76,29 +78,19 @@ def main():
     synth_data_path = args.synth_data_path
     
     print(f"length dataset : {len(orig_dataset)}")
-
+    
     def get_vectors(dataset, data_dir_path): 
-
-        
-
-        if args.model_architecture == "densenet121":        
-            last_layer_hook = model.classifier.register_forward_hook(save_output)
-        else:
-            last_layer_hook = model.fc.register_forward_hook(save_output)
-
-        
 
         dataloader = DataLoader(dataset,batch_size=args.val_batch_size,shuffle=False,num_workers=args.num_workers)
 
         for i,(imgs,labels) in enumerate(dataloader):
             if cuda:
                 imgs = imgs.cuda()
-                _ = model(imgs)
+                model(imgs)
 
                 if i > 1 and args.debug:
                     break
 
-        
         vectors = [vec.numpy() for vec in vector_list]
 
         return vectors
@@ -107,22 +99,25 @@ def main():
     #Commpute mean and covariance matrix for the original dataset
     vector_list = []
     original_vectors = get_vectors(orig_dataset, orig_data_path)
+    # print(original_vectors)
+    # print(len(original_vectors))
     pca = PCA(n_components=64)
     original_vectors_new = pca.fit_transform(original_vectors)
 
     mu = np.mean(original_vectors_new, axis=0)
     cov_matrix = np.cov(original_vectors_new, rowvar=False)
-    print(original_vectors_new)
-    print(mu)
+    # print(original_vectors_new)
+    # print(mu)
     #print(cov_matrix)
     
 
 
     #TODO : iterate over synthetic dataset and ca
     vector_list = []
+    # print(len(synth_dataset))
     synthetic_vectors = get_vectors(synth_dataset, synth_data_path)
     synthetic_vectors_new = pca.transform(synthetic_vectors)
-    #print(synthetic_vectors)
+    
     
 
     #print(synthetic_vectors)
@@ -139,9 +134,11 @@ def main():
         m_normal = stats.multivariate_normal(mean=mu, cov=cov_matrix,allow_singular=True)
         likely_list.append(m_normal.pdf(vector))
         """
-        
-    likely_list= np.argsort(likely_list)
-    print(likely_list)
+    # likely_list.sort(reverse=True)
+    print(likely_list)   
+    likely_list_idx = np.argsort(likely_list)
+    print(likely_list_idx)
+    print([synth_dataset.get_file(idx) for idx in likely_list_idx])
 
 if __name__ == "__main__":
     main()
