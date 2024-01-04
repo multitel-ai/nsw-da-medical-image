@@ -21,7 +21,9 @@ The finetuning can be be launched using ./lastBen_unet_fine_tune.sh $1 $2 $3 $4 
 9. $9 = after how many steps do want the checkpoint to be save
 10. $10 = after how many steps do you want to want to generate validation images
 11. $11 = how many images do you want to generate for each validation
+12. $12 = checkpoint-file
+13. $13 = how many checkpoints to be saved -> Meaning after the limit is set, older checkpoints would be deleted
 
-./lastBen_unet_fine_tune.sh /App/data/extracted/phase_t2_images/images 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 50 /App/models/stable_diffusion/phase-t2-sessions 500 200 20
+./lastBen_unet_fine_tune.sh /App/data/extracted/phase_t2_images/images 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 50 /App/models/stable_diffusion/phase-t2-sessions 500 200 20 checkpoint-1200
 
 

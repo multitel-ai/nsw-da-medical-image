@@ -701,7 +701,7 @@ def main():
             for example in tqdm(
                 sample_dataloader, desc="Generating class images", disable=not accelerator.is_local_main_process
             ):
-                with torch.autocast("cuda"):                
+                with torch.autocast("cuda"):
                     images = pipeline(example["prompt"]).images
 
                 for i, image in enumerate(images):
@@ -885,6 +885,7 @@ def main():
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     global_step = 0
+    first_epoch = 0
 
     # Potentially load in the weights and states from a previous save
     if args.resume_from_checkpoint:
@@ -907,20 +908,17 @@ def main():
             accelerator.load_state(os.path.join(args.output_dir, path))
             global_step = int(path.split("-")[1])
 
-            resume_global_step = global_step * args.gradient_accumulation_steps
             first_epoch = global_step // num_update_steps_per_epoch
-            resume_step = resume_global_step % (num_update_steps_per_epoch * args.gradient_accumulation_steps)
 
-    for epoch in range(args.num_train_epochs):
+    for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
         if args.train_text_encoder:
             text_encoder.train()
-        for step, batch in enumerate(train_dataloader):
 
-            if args.resume_from_checkpoint and args.num_train_epochs < first_epoch:
-                if step % args.gradient_accumulation_steps == 0:
-                    progress_bar.update(1)
-                continue
+        for step, batch in enumerate(train_dataloader):
+            if args.resume_from_checkpoint and epoch == first_epoch and step == 0:
+                progress_bar.update(first_epoch * num_update_steps_per_epoch)
+
             with accelerator.accumulate(unet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -987,7 +985,7 @@ def main():
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                
+
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
                         # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`
@@ -1035,7 +1033,7 @@ def main():
             fll=round((global_step*100)/args.max_train_steps)
             fll=round(fll/4)
             pr=bar(fll)
-            
+
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
             progress_bar.set_description_str("Progress:"+pr)
@@ -1046,7 +1044,7 @@ def main():
 
             if global_step >= args.max_train_steps:
                 break
-                       
+
             if args.save_n_steps >= 200:
                 if global_step < args.max_train_steps and global_step+1==i:
                     inst=os.path.basename(args.Session_dir)
@@ -1057,23 +1055,23 @@ def main():
                             args.pretrained_model_name_or_path,
                             unet=accelerator.unwrap_model(unet),
                             text_encoder=accelerator.unwrap_model(text_encoder),
-                        )               
+                        )
                         chkpth=args.Session_dir+"/"+inst+".ckpt"
                         if args.mixed_precision=="fp16":
                             save_stable_diffusion_checkpoint(unet.config.cross_attention_dim == 1024, chkpth, pipeline.text_encoder, pipeline.unet, None, 0, 0, torch.float16, pipeline.vae)
                         else:
                             save_stable_diffusion_checkpoint(unet.config.cross_attention_dim == 1024, chkpth, pipeline.text_encoder, pipeline.unet, None, 0, 0, None, pipeline.vae)
-                        print("Done, resuming training ...[0m")   
+                        print("Done, resuming training ...[0m")
                         i = i + args.save_n_steps
-                    
-           
+
+
         accelerator.wait_for_everyone()
 
     # Create the pipeline using using the trained modules and save it.
     if accelerator.is_main_process:
         if args.dump_only_text_encoder:
             txt_dir=args.output_dir + "/text_encoder_trained"
-            if args.train_only_text_encoder:            
+            if args.train_only_text_encoder:
                 pipeline = StableDiffusionPipeline.from_pretrained(
                     args.pretrained_model_name_or_path,
                     text_encoder=accelerator.unwrap_model(text_encoder),
