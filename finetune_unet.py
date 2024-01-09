@@ -73,6 +73,16 @@ def get_parser():
         help="After how many steps do want the checkpoint to be save",
     )
     parser.add_argument(
+        "--resume-from-checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "Whether training should be resumed from a previous checkpoint. Use "
+            "a path saved by `--checkpointing-steps`, or `\"latest\"` to "
+            "automatically select the last available checkpoint."
+        )
+    )
+    parser.add_argument(
         "--validation-steps",
         type=int,
         default=200,
@@ -149,6 +159,12 @@ def as_arg_list(args: argparse.Namespace):
         "--train_only_unet",
         "--checkpointing_steps",
         str(args.checkpoint_steps),
+    ]
+
+    if args.resume_from_checkpoint is not None:
+        terms += ["--resume_from_checkpoint", str(args.resume_from_checkpoint)]
+
+    terms += [
         "--save_starting_step",
         str(args.checkpoint_steps),
         "--save_n_steps",
