@@ -27,3 +27,4 @@ The finetuning can be be launched using ./lastBen_unet_fine_tune.sh $1 $2 $3 $4 
 ./lastBen_unet_fine_tune.sh /App/data/extracted/phase_t2_images/images 'a grayscale microscopic image of human embryo at phase t2' 3300 'phase-t2' /App/models/stable_diffusion/ /App/data/synthetic-images 50 /App/models/stable_diffusion/phase-t2-sessions 500 200 20 checkpoint-1200
 
 
+cd /App/code && python finetune_unet.py --image-folder /App/data/image-folders/8c4aa3ec-4c1c-4ec6-98b2-309f32bbdc0e/ --instance-prompt DO_NOT_USE_THIS --wandb-run-name proto-cls-cond-0 --wandb-entity maxime915 --low-memory-optimizations --validation-steps 2 --num-validation-images 1

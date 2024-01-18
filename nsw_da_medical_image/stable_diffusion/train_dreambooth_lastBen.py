@@ -3,7 +3,7 @@ import itertools
 import math
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable
 import sys
 import copy
 import importlib
@@ -29,19 +29,120 @@ from transformers import CLIPTextModel, CLIPTokenizer
 import wandb
 
 from .Conv import save_stable_diffusion_checkpoint
+from ..dataset_util import Phase
 
 
 logger = get_logger(__name__)
+
+
+def pretender(obj, attrs: dict[str, Any], fn: Callable | None = None):
+    "fake an object"
+
+    class Pretender:
+        def __call__(self, *a, **kw):
+            if fn is None:
+                return obj(*a, **kw)
+            return fn(*a, **kw)
+
+        def __getattribute__(self, __name: str) -> Any:
+            sentinel = object()
+            value = attrs.get(__name, sentinel)
+            if value is not sentinel:
+                return value
+            return getattr(obj, __name)
+
+    return Pretender()
+
+
+def tmp(tokenizer: CLIPTokenizer, text_encoder: CLIPTextModel, embeddings: torch.nn.Embedding):
+    values = {}
+    def _to_fn(key: str):
+        def _to(*a, **kw):
+            return values[key]
+        return _to
+
+    def tokenizer_tokenize(*s):
+        return []  # hopefully this works
+    def tokenizer_embed(msg: str, *a, **kw):
+        label = extract_label(msg)
+        label_t = torch.tensor([label], dtype=torch.long, device=embeddings.device)
+        return label_t
+    def encode(tsr: torch.Tensor):
+        "do nothing: the embeddings are already OK"
+        return tsr
+
+    # "pretend" these two models
+    tokenizer = values["tokenizer"] = pretender(tokenizer, {"to": _to_fn("tokenizer"), "tokenize": tokenizer_tokenize}, fn=tokenizer_embed)
+    text_encoder = values["text_encoder"] = pretender(text_encoder, {"to": _to_fn("text_encoder")}, fn=encode)
+
+    """need to override:
+    
+to(): take any argument are return the pretender
+    -> how do I make this possible ? return a item of the list or something.
+
+tokenizer.tokenize('', ) = []
+tokenizer.tokenize('DO_NOT_USE_THIS', ) = ['do</w>', '_</w>', 'not</w>', '_</w>', 'use</w>', '_</w>', 'this</w>']
+tokenizer('DO_NOT_USE_THIS', padding='max_length', max_length=77, truncation=True, return_tensors='pt')
+tokenizer('DO_NOT_USE_THIS', padding='longest', return_tensors='pt')
+tokenizer([''], padding='max_length', max_length=77, truncation=True, return_tensors='pt')
+text_encoder(tensor([[... -> 77]], dtype=torch.long, device="cuda:0"), attention_mask=None)
+    """
+
+
+def build_logger(label: str, obj, callback: Callable[[str], Any] = print, log_callable_attrs: bool = True):
+    def _log_fn(fn_name: str, callable):
+        def __inner(*a, **kw):
+            value = callable(*a, **kw)
+
+            args = ", ".join(f"{v!r}" for v in a)
+            kwargs = ", ".join(f"{k}={v!r}" for k, v in kw.items())
+            t_args = ", ".join([args, kwargs])
+
+            callback(f"{fn_name}({t_args}) = {value!r}")
+
+            if hasattr(value, "__call__"):
+                return _log_fn(f"{fn_name}({t_args})", value)
+
+            return value
+        return __inner
+            
+
+    class Logger:
+        def __call__(self, *a, **kw):
+            return _log_fn(f"{label}", obj.__call__)(*a, **kw)
+
+        def __getattribute__(self, __name: str):
+            sentinel = object()
+            value = getattr(obj, __name, sentinel)
+            if value is sentinel:
+                raise AttributeError(f"{label}.{__name}", name=__name)
+
+            callback(f"{label}.{__name} = {value!r}")
+
+            if log_callable_attrs and hasattr(value, "__call__") and not isinstance(value, type):
+                # this is not foolproof: returning the value would be correct (but lacking more info)
+                return _log_fn(f"{label}.{__name}", value)
+
+            return value
+    return Logger()
+
+
+class Ebd:
+    def __init__(self, value: torch.Tensor) -> None:
+        self.input_ids = value
+
 
 def log_validation(
     text_encoder,
     tokenizer,
     unet,
     vae,
+    embeddings: torch.nn.Embedding,
     args,
     accelerator,
     weight_dtype,
     global_step,
+    validation_prompt_list: list[str],
     prompt_embeds,
     negative_prompt_embeds,
 ):
@@ -57,6 +158,42 @@ def log_validation(
 
     if text_encoder is not None:
         text_encoder = accelerator.unwrap_model(text_encoder)
+
+    # the 'to' method must return the 'Pretender', but we don't have access to the
+    # pretender object at the definition time: use a dict + higher order function
+    # that access the lazily populated dict to return the correct object
+    values = {}
+    def _to_fn(key: str):
+        def _to(*a, **kw):
+            return values[key]
+        return _to
+
+    def tokenizer_tokenize(*s):
+        return []  # hopefully this works
+    def tokenizer_embed(msg: str, *a, **kw):
+        # sometimes there is one, sometimes there are multiple
+        if isinstance(msg, list):
+            assert len(msg) == 1
+            msg = msg[0]
+        # should not be empty
+        assert msg
+
+        label = extract_label(msg)
+        label_t =  torch.tensor([label], dtype=torch.long, device=unet.device)
+        label_emb = embeddings(label_t).view(-1, 16, 1024)
+
+        # because returning the embeddings directly would be too easy
+        return Ebd(label_emb)
+
+    def encode(tsr: torch.Tensor, *a, **kw):
+        "do nothing: the embeddings are already OK"
+        # no idea why this is needed...
+        return tsr.unsqueeze(0)
+
+
+    # "pretend" these two models
+    tokenizer = values["tokenizer"] = pretender(tokenizer, {"to": _to_fn("tokenizer"), "tokenize": tokenizer_tokenize}, fn=tokenizer_embed)
+    text_encoder = values["text_encoder"] = pretender(text_encoder, {"to": _to_fn("text_encoder")}, fn=encode)
 
     # create pipeline (note: unet and vae are loaded again in float32)
     pipeline = DiffusionPipeline.from_pretrained(
@@ -87,33 +224,39 @@ def log_validation(
     pipeline.set_progress_bar_config(disable=True)
 
     if args.pre_compute_text_embeddings:
+        raise RuntimeError("not this now")
         pipeline_args = {
             "prompt_embeds": prompt_embeds,
             "negative_prompt_embeds": negative_prompt_embeds,
         }
     else:
         pipeline_args = {"prompt": args.validation_prompt}
+    pipeline_args["guidance_scale"] = 1.0  # lower, but prevent "do_classifier_free_guidance", which is not supported
 
     # run inference
     generator = None if args.seed is None else torch.Generator(device=accelerator.device).manual_seed(args.seed)
+    generator_cpu = None if args.seed is None else torch.Generator().manual_seed(args.seed)
+    prompt_indices = torch.randint(0, len(validation_prompt_list), size=(args.num_validation_images,), generator=generator_cpu)
     images = []
     if args.validation_images is None:
-        for _ in range(args.num_validation_images):
+        for idx in range(args.num_validation_images):
             with torch.autocast("cuda"):
+                pipeline_args["prompt"] = validation_prompt_list[prompt_indices[idx]]
                 image = pipeline(**pipeline_args, num_inference_steps=25, generator=generator).images[0]
-            images.append(image)
+            images.append((pipeline_args["prompt"], image))
     else:
-        for image in args.validation_images:
+        for idx, image in enumerate(args.validation_images):
             image = Image.open(image)
+            pipeline_args["prompt"] = validation_prompt_list[prompt_indices[idx]]
             image = pipeline(**pipeline_args, image=image, generator=generator).images[0]
-            images.append(image)
+            images.append((pipeline_args["prompt"], image))
 
     for tracker in accelerator.trackers:
         if tracker.name == "wandb":
             tracker.log(
                 {
                     "validation": [
-                        wandb.Image(image, caption=f"{i}: {args.validation_prompt}") for i, image in enumerate(images)
+                        wandb.Image(image, caption=f"{prompt}") for prompt, image in images
                     ]
                 }
             )
@@ -511,6 +654,17 @@ def parse_args(parser: argparse.ArgumentParser):
     return args
 
 
+def extract_label(prompt: str):
+    # expect the right structure:
+    prompt = prompt.strip()
+    prefix = "a microscopic image of a human embryo at phase "
+    if not prompt.startswith(prefix):
+        raise ValueError(f"{prompt=!r} does not start with {prefix=!r}")
+
+    phase_label = prompt[len(prefix):]
+    return Phase(phase_label).idx()
+
+
 class DreamBoothDataset(Dataset):
     """
     A dataset to prepare the instance and class images with the prompts for fine-tuning the model.
@@ -594,17 +748,22 @@ class DreamBoothDataset(Dataset):
                 cptpth = os.path.join(self.captions_dir, filename + '.txt')  # type:ignore
                 if os.path.exists(cptpth):
                     with open(cptpth, "r") as f:
-                        instance_prompt = pt + ' ' + f.read()
+                        f_content = f.read()
+                        label = extract_label(f_content)
+                        instance_prompt = pt + ' ' + f_content
                 else:
+                    raise RuntimeError(f"{cptpth} not found")
                     instance_prompt = pt
             else:
+                raise RuntimeError(f"{self.external_captions=!r}")
                 if self.Style:
                     instance_prompt = ""
                 else:
                     instance_prompt = pt
-            sys.stdout.write(" [0;32m" + instance_prompt[:45] + " [0m")
-            sys.stdout.flush()
+        else:
+            raise RuntimeError(f"{self.image_captions_filename=!r}")
 
+        example["class_label"] = label
         example["instance_images"] = self.image_transforms(instance_image)
         example["instance_prompt_ids"] = self.tokenizer(
             instance_prompt,
@@ -627,6 +786,14 @@ class DreamBoothDataset(Dataset):
 
         return example
 
+    def load_prompt_set(self):
+        caption_files = list(Path(self.captions_dir).iterdir())
+        prompts: set[str] = set()
+        for file in caption_files:
+            with open(file, "r") as f_h:
+                prompts.add(f_h.read())
+        return list(prompts)
+
 
 class PromptDataset(Dataset):
     "A simple dataset to prepare the prompts to generate class images on multiple GPUs."
@@ -647,6 +814,13 @@ class PromptDataset(Dataset):
 
 def main():
     args = parse_args(get_parser())
+    args.with_prior_preservation = False
+    args.train_text_encoder = False
+    args.train_only_unet = True
+    args.image_captions_filename = True
+    args.external_captions = True
+    args.captions_dir = str(Path(args.instance_data_dir).parent / "descriptions")
+    args.pre_compute_text_embeddings = False
     i=args.save_starting_step
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir)
@@ -713,12 +887,16 @@ def main():
 
 
     # Load the tokenizer
+    tokenizer: CLIPTokenizer
     if args.tokenizer_name:
         tokenizer = CLIPTokenizer.from_pretrained(args.tokenizer_name)
     elif args.pretrained_model_name_or_path:
         tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
+    else:
+        raise ValueError("bad arguments: unable to initialize the tokenizer")
 
     # Load models and create wrapper for stable diffusion
+    text_encoder: CLIPTextModel
     if args.train_only_unet or args.dump_only_text_encoder:
         if os.path.exists(str(args.output_dir+"/text_encoder_trained")):
             text_encoder = CLIPTextModel.from_pretrained(args.output_dir, subfolder="text_encoder_trained")
@@ -726,8 +904,8 @@ def main():
             text_encoder = CLIPTextModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder")
     else:
         text_encoder = CLIPTextModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder")
-    vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae")
-    unet = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
+    vae: AutoencoderKL = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae")
+    unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
 
     vae.requires_grad_(False)
     if not args.train_text_encoder:
@@ -759,18 +937,20 @@ def main():
     else:
         optimizer_class = torch.optim.AdamW
 
-    params_to_optimize = (
-        itertools.chain(unet.parameters(), text_encoder.parameters()) if args.train_text_encoder else unet.parameters()
-    )
+    class_embeddings = torch.nn.Embedding(len(Phase), 16 * 1024)
+    params_to_optimize = [unet.parameters(), class_embeddings.parameters()]
+    if args.train_text_encoder:
+        params_to_optimize.append(text_encoder.parameters())
+
     optimizer = optimizer_class(
-        params_to_optimize,
+        itertools.chain(*params_to_optimize),
         lr=args.learning_rate,
         betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon,
     )
-
-    noise_scheduler = DDPMScheduler.from_config(args.pretrained_model_name_or_path, subfolder="scheduler")
+ 
+    noise_scheduler: DDPMScheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
 
     pre_computed_encoder_hidden_states = None
     validation_prompt_encoder_hidden_states = None
@@ -787,6 +967,7 @@ def main():
         center_crop=args.center_crop,
         args=args,
     )
+    val_prompt_list = train_dataset.load_prompt_set()
 
     def collate_fn(examples):
         input_ids = [example["instance_prompt_ids"] for example in examples]
@@ -799,13 +980,16 @@ def main():
             pixel_values += [example["class_images"] for example in examples]
 
         pixel_values = torch.stack(pixel_values)
-        pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
+        pixel_values = pixel_values.contiguous().float()
 
         input_ids = tokenizer.pad({"input_ids": input_ids}, padding=True, return_tensors="pt").input_ids
+
+        class_labels = torch.tensor([ex["class_label"] for ex in examples], dtype=torch.long).to(pixel_values.device)
 
         batch = {
             "input_ids": input_ids,
             "pixel_values": pixel_values,
+            "class_labels": class_labels
         }
         return batch
 
@@ -828,12 +1012,12 @@ def main():
     )
 
     if args.train_text_encoder:
-        unet, text_encoder, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-            unet, text_encoder, optimizer, train_dataloader, lr_scheduler
+        unet, text_encoder, class_embeddings, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+            unet, text_encoder, class_embeddings, optimizer, train_dataloader, lr_scheduler
         )
     else:
-        unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-            unet, optimizer, train_dataloader, lr_scheduler
+        unet, class_embeddings, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+            unet, class_embeddings, optimizer, train_dataloader, lr_scheduler
         )
 
     weight_dtype = torch.float32
@@ -863,7 +1047,7 @@ def main():
     accelerator.init_trackers(args.wandb_project, config=tracker_config, init_kwargs={
         "wandb": {
             "entity": args.wandb_entity,
-            "name": args.wandb_run_name
+            "name": args.wandb_run_name,
         }
     })
 
@@ -939,8 +1123,12 @@ def main():
                 # (this is the forward diffusion process)
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
-                # Get the text embedding for conditioning
-                encoder_hidden_states = text_encoder(batch["input_ids"])[0]
+                if class_embeddings is None:
+                    # Get the text embedding for conditioning
+                    encoder_hidden_states = text_encoder(batch["input_ids"])[0]
+                else:
+                    encoder_hidden_states: torch.Tensor = class_embeddings(batch["class_labels"])
+                    encoder_hidden_states = encoder_hidden_states.view((-1, 16, 1024))
 
                 # Predict the noise residual
                 model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
@@ -1020,10 +1208,12 @@ def main():
                             tokenizer,
                             unet,
                             vae,
+                            class_embeddings,
                             args,
                             accelerator,
                             weight_dtype,
                             global_step,
+                            val_prompt_list,
                             validation_prompt_encoder_hidden_states,
                             validation_prompt_negative_prompt_embeds,
                         )

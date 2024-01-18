@@ -69,7 +69,7 @@ def get_parser():
     parser.add_argument(
         "--checkpoint-steps",
         type=int,
-        default=500,
+        default=50000,
         help="After how many steps do want the checkpoint to be save",
     )
     parser.add_argument(
@@ -177,7 +177,7 @@ def as_arg_list(args: argparse.Namespace):
         str(pathlib.Path(args.image_folder) / "images"),
         "--output_dir",
         str(pathlib.Path(args.save_model_to) / args.wandb_run_name),
-        "--with_prior_preservation",
+        # "--with_prior_preservation",
         "--prior_loss_weight",
         "1.0",
         "--instance_prompt",
@@ -191,7 +191,7 @@ def as_arg_list(args: argparse.Namespace):
         "--gradient_accumulation_steps",
         "1",
         "--learning_rate",
-        "7e-6",
+        "1e-6",
         "--lr_scheduler",
         "constant",
         "--lr_warmup_steps",
