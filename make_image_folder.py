@@ -28,24 +28,6 @@ parser.add_argument(
     required=False,
     help="a name for the image folder (opt.) a UUIDv4 will be used if none",
 )
-parser.add_argument(
-    "--shuffle",
-    action="store_true",
-    help="whether the images should be shuffled",
-)
-parser.add_argument(
-    "--no-shuffle",
-    action="store_false",
-    dest="shuffle"
-)
-parser.set_defaults(shuffle=True)
-parser.add_argument(
-    "--seed",
-    type=int,
-    default=0,
-    required=False,
-    help="random seed, ignored if shuffle is False"
-)
 
 args = parser.parse_args()
 
@@ -77,6 +59,4 @@ img_f.make_image_folder_every_phase_vid(
     videos,
     [du.FocalPlane.F_0],
     on_exist="raise",
-    shuffle=args.shuffle,
-    seed=args.seed,
 )

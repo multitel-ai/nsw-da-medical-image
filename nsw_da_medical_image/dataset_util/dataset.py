@@ -1,5 +1,4 @@
 import bisect
-import itertools
 import operator
 import pathlib
 import PIL.Image as Image
@@ -7,7 +6,7 @@ import typing
 import pandas as pd
 
 import torch
-import torchvision.transforms as transforms
+from torchvision.transforms.functional import to_tensor  # type:ignore
 from torch.utils.data.dataset import Dataset
 
 from .enums import Video, FocalPlane, Phase
@@ -30,47 +29,88 @@ class PhaseRange(typing.NamedTuple):
         return self.last - self.first + 1
 
 
-class VideoPhases(typing.NamedTuple):
-    # for each phase : first, last
-    content: dict[Phase, PhaseRange]
+def read_phase_ranges(base_path: pathlib.Path, video: Video):
+    "build a mapping indicating the ranges of each phase in a video"
 
-    @staticmethod
-    def read(base_path: pathlib.Path, video: str | Video):
-        if isinstance(video, Video):
-            video = video.directory
-        csv_p = base_path / (PREFIX + "_annotations") / f"{video}_phases.csv"
-        df = pd.read_csv(csv_p, index_col=None, header=None)
-        df.columns = ["phase", "first", "last"]
+    csv_p = base_path / (PREFIX + "_annotations") / f"{video.directory}_phases.csv"
+    df = pd.read_csv(
+        csv_p,
+        index_col=None,
+        header=None,
+        names=["phase", "first", "last"],
+        dtype={"phase": str, "first": int, "last": int},
+    )
 
-        _content: dict[Phase, PhaseRange] = {}
-        for _, phase, first, last in df.itertuples():
-            _content[Phase(phase)] = PhaseRange(first, last)
+    _content: dict[Phase, PhaseRange] = {}
+    for _, phase, first, last in df.itertuples():
+        _content[Phase(phase)] = PhaseRange(first, last)
 
-        return VideoPhases(_content)
+    return _content
 
-    def count_phases(self):
-        "return the *reported* number of annotated frames for each phase, actual may be lower"
-        return {p: r.count for p, r in self.content.items()}
 
-    def filter_frames(self, frames: typing.Iterable[int]):
-        min_frame = min(pr.first for pr in self.content.values())
-        max_frame = max(pr.last for pr in self.content.values())
+def count_phase_ranges(phase_dict: dict[Phase, PhaseRange]):
+    return {k: v.count for k, v in phase_dict.items()}
 
-        return [f for f in frames if min_frame <= f and f <= max_frame]
 
-    def annotate(self, frame: int):
-        "annotate a frame, it must be annotated in the CSV"
-        for phase, range in self.content.items():
-            if range.first > frame:
-                continue
-            if range.last < frame:
-                continue
-            return phase
-        raise ValueError(f"{frame=} is not annotated")
+def build_frame_dict(frames: typing.Iterable[int], phase_dict: dict[Phase, PhaseRange]):
+    "build a mapping indicating all valid frame of each phase"
 
-    def annotate_lst(self, frames: typing.Iterable[int]):
-        "annotate all frames, they must be annotated in the CSV"
-        return [self.annotate(f) for f in frames]
+    if not phase_dict:
+        raise ValueError(f"{phase_dict=!r} may not be empty")
+
+    # sort by phase's first frame
+    phases_items = sorted(phase_dict.items(), key=lambda tpl: tpl[1].first)
+    phase_start_offset = [pr.first for _, pr in phases_items]
+
+    # group frame in each phase
+    frame_dict: dict[Phase, set[int]] = {}
+    for frame_ in frames:
+        phase_item_idx = bisect.bisect_left(phase_start_offset, frame_)
+        phase_item_idx = max(0, phase_item_idx - 1)
+
+        phase, pr = phases_items[phase_item_idx]
+
+        # frames may be before the first or after the last phase
+        if frame_ < pr.first:
+            continue
+        if frame_ > pr.last:
+            continue
+
+        frame_dict.setdefault(phase, set()).add(frame_)
+
+    return frame_dict
+
+
+def filter_median_frames(frame_dict: dict[Phase, set[int]]):
+    "filter to only select the median frame of each phase"
+
+    def _select_median(val: set[int]) -> set[int]:
+        values = sorted(val)
+
+        mid_idx, odd = divmod(len(values), 2)
+        if not odd:
+            # arithmetic mean: only work for *dense* range (not guaranteed here)
+            med = int(0.5 * (values[mid_idx - 1] + values[mid_idx]))
+            # make sure that the median is a valid frame
+            if med not in val:
+                med = values[mid_idx - 1]  # round left
+        else:
+            med = values[mid_idx]
+        return set([med])
+
+    return {k: _select_median(v) for k, v in frame_dict.items()}
+
+
+def flatten_frame_dict(frame_dict: dict[Phase, set[int]]):
+    def _items(phase: Phase, frames: set[int]):
+        value = phase.idx()
+        return [(k, value) for k in sorted(frames)]
+
+    items: list[tuple[int, int]] = sum(
+        (_items(p, fs) for p, fs in frame_dict.items()), []
+    )
+    # sort by frame: while each phase is already sorted, the phase may have been out of order
+    return sorted(items, key=lambda tpl: tpl[0])
 
 
 class DataItem(typing.NamedTuple):
@@ -85,17 +125,19 @@ class DataItem(typing.NamedTuple):
 
 class VideoMetadata(typing.NamedTuple):
     video: int  # index in enums.Video
-    frames: list[int]  # values in the filenames
+    frames: list[tuple[int, int]]  # (frame number, phase index)
     prefix: str  # filename prefix to find the path of the image
     cum_num_frames: int  # amount of frames of all previous videos in the list
-    phases: VideoPhases
 
 
 def _get_video_frames(
     plane_path: pathlib.Path,
     videos: list[Video],
+    select_phases: list[Phase],
+    filter_on_median: bool,
 ) -> list[VideoMetadata]:
     videos_metadata: list[VideoMetadata] = []
+    phase_set = set(select_phases)
     _running_count = 0
 
     for _video in videos:
@@ -108,20 +150,36 @@ def _get_video_frames(
             idx = frame_file.stem.find("RUN", -8) + len("RUN")
             frame_number = int(frame_file.stem[idx:])
             frame_lst.append(frame_number)
+        if not frame_lst:
+            raise RuntimeError(f"{_video_dir} contains no frame file")
 
-        phases = VideoPhases.read(plane_path.parent, _video)
-        frame_lst = phases.filter_frames(frame_lst)
+        # read info from the video: what are the start/end of each phase ?
+        phases = read_phase_ranges(plane_path.parent, _video)
+        if not phases:
+            raise RuntimeError(f"unexpected: {phases=!r} at {_video_dir}")
+
+        # apply filtering based on the given phases
+        phases = {k: v for k, v in phases.items() if k in phase_set}
+        if not phases:
+            # in the case of phase filtering, it may happen that some videos do not
+            # have any frames for certain phases. This can safely be ignored.
+            continue
+
+        # load each frame as a tuple (number, phase) where `number` is the filename suffix
+        frame_dict = build_frame_dict(frame_lst, phases)
+        if filter_on_median:
+            frame_dict = filter_median_frames(frame_dict)
+        frames = flatten_frame_dict(frame_dict)
 
         prefix = frame_file.stem[:idx]  # type:ignore
         metadata = VideoMetadata(
             video=_video.idx(),
-            frames=sorted(frame_lst),
+            frames=frames,
             prefix=prefix,
             cum_num_frames=_running_count,
-            phases=phases
         )
         videos_metadata.append(metadata)
-        _running_count += len(frame_lst)
+        _running_count += len(frames)
 
     return videos_metadata
 
@@ -134,7 +192,10 @@ class NSWDataset(Dataset[DataItem]):
         base_path: pathlib.Path,
         videos: list[Video] | None = None,
         planes: list[FocalPlane] | None = None,
+        phases: list[Phase] | None = None,
         transform: typing.Callable[[Image.Image], torch.Tensor] | None = None,
+        *,
+        filter_on_median: bool = False,
     ) -> None:
         super().__init__()
 
@@ -142,15 +203,28 @@ class NSWDataset(Dataset[DataItem]):
             videos = list(Video)
         if planes is None:
             planes = list(FocalPlane)
+        if phases is None:
+            phases = list(Phase)
+        if transform is None:
+            transform = to_tensor
+
+        if not videos:
+            raise ValueError("'videos' may not be empty")
+        if not planes:
+            raise ValueError("'planes' may not be empty")
+        if not phases:
+            raise ValueError("'phases' may not be empty")
 
         self.videos = videos
         self.planes = planes
         self.base_path = base_path
-        self.transform = transform or transforms.ToTensor()
+        self.transform = transform
 
         self.videos_metadata = _get_video_frames(
             self.base_path / (PREFIX + self.planes[0].suffix),
             self.videos,
+            select_phases=phases,
+            filter_on_median=filter_on_median,
         )
 
     def frames_per_plane(self) -> int:
@@ -188,7 +262,7 @@ class NSWDataset(Dataset[DataItem]):
         video = Video.from_idx(metadata.video)
         frame = metadata.frames[in_plane_idx - metadata.cum_num_frames]
 
-        return plane, video, frame, metadata.prefix, metadata.phases
+        return plane, video, frame, metadata.prefix
 
     def get_directory(self, plane: FocalPlane, video: Video):
         return self.base_path / (PREFIX + plane.suffix) / video.directory
@@ -197,29 +271,20 @@ class NSWDataset(Dataset[DataItem]):
         return vid_dir / (prefix + str(frame) + ".jpeg")
 
     def __getitem__(self, index) -> DataItem:
-        plane, video, frame, prefix, phases = self.un_flatten_idx(index)
+        plane, video, (frame, phase_idx), prefix = self.un_flatten_idx(index)
 
         image_path = self.find_image(self.get_directory(plane, video), prefix, frame)
         image = Image.open(image_path)
-
-        phase = phases.annotate(frame)
 
         data = self.transform(image)
 
         return DataItem(
             image=data,
-            phase=phase.idx(),
+            phase=phase_idx,
             plane=plane.idx(),
             video=video.idx(),
             frame_number=frame,
         )
-
-    def all_phases(self) -> list[Phase]:
-        "a list of all phases of this dataset with the same order as the items"
-        def _annotate(vid_metadata: VideoMetadata):
-            return vid_metadata.phases.annotate_lst(vid_metadata.frames)
-        return list(itertools.chain.from_iterable(map(_annotate, self.videos_metadata)))
-
 
 
 def __label(plane: int, video: int, frame: int):
@@ -239,7 +304,7 @@ def label_batch(planes: torch.Tensor, videos: torch.Tensor, frames: torch.Tensor
         raise ValueError(f"shape mismatch: {videos.shape=} != {frames.shape=}")
 
     try:
-        batch_size, = planes.shape
+        (batch_size,) = planes.shape
     except ValueError as e:
         raise ValueError("expected single dimension tensors") from e
 
@@ -248,38 +313,3 @@ def label_batch(planes: torch.Tensor, videos: torch.Tensor, frames: torch.Tensor
         labels.append(__label(int(planes[idx]), int(videos[idx]), int(frames[idx])))
 
     return labels
-
-
-def __main():
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", type=str, help="extracted dataset")
-    parser.add_argument(
-        "--n-parts", type=int, default=1, help="how many parts should be split"
-    )
-    parser.add_argument(
-        "--part-index", type=int, default=0, help="index of the part to compute"
-    )
-    args = parser.parse_args()
-
-    if args.part_index >= args.n_parts:
-        raise ValueError(f"{args.part_index=} out of bound ({args.n_parts=})")
-
-    videos: list[Video] | None = None
-    if args.n_parts > 1:
-        videos = Video.split(args.n_parts)[args.part_index]
-
-    ds = NSWDataset(pathlib.Path(args.dataset), videos=videos)
-    for idx in range(len(ds)):
-        plane, video, frame, _, _ = ds.un_flatten_idx(idx)
-        try:
-            ds[idx]
-        except OSError as e:
-            print((video, plane, frame, str(e)))
-        except ZeroDivisionError as e:
-            print((video, plane, frame, str(e)))
-
-
-if __name__ == "__main__":
-    __main()

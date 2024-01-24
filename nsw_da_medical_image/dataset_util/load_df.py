@@ -4,7 +4,7 @@ import typing
 import pandas as pd
 
 from .enums import FocalPlane, Video
-from .dataset import VideoPhases
+from .dataset import read_phase_ranges, Phase, PhaseRange
 
 
 class DSRow(typing.TypedDict):
@@ -81,10 +81,10 @@ def analyze(
         check_df(image_df)
 
     # Video annotations: where does each phase start and end ?
-    annotation_dict: dict[Video, VideoPhases] = {}
+    annotation_dict: dict[Video, dict[Phase, PhaseRange]] = {}
     for video in Video:
-        phase_dict = VideoPhases.read(processed_dataset, video)
-        annotation_dict[video] = phase_dict
+        phases = read_phase_ranges(processed_dataset, video)
+        annotation_dict[video] = phases
 
     # Video timestamps: what does each frame index represent ?
     time_dir = prefix + "_time_elapsed"

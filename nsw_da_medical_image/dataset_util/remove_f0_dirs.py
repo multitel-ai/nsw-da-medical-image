@@ -2,7 +2,7 @@ import hashlib
 import pathlib
 import shutil
 
-from extract_dataset import FocalPlane
+from .extract_dataset import FocalPlane
 
 
 def hash(file: pathlib.Path):

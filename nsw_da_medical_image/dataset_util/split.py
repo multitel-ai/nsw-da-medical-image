@@ -4,7 +4,7 @@ import random
 import typing
 
 from .enums import Phase, Video
-from .dataset import VideoPhases
+from .dataset import read_phase_ranges, count_phase_ranges
 
 
 def random_split(videos: list[Video], weights: typing.Iterable[float], prg: random.Random):
@@ -85,8 +85,8 @@ def count_phases_in_videos(base_path: pathlib.Path, videos: list[Video] | None =
 
     phase_counter: dict[Video, dict[Phase, int]] = {}
     for video in videos:
-        vid_phases = VideoPhases.read(base_path, video)
-        phase_counter[video] = vid_phases.count_phases()
+        vid_phases = read_phase_ranges(base_path, video)
+        phase_counter[video] = count_phase_ranges(vid_phases)
     return phase_counter
 
 
